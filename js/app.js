@@ -226,12 +226,28 @@
         g.textBaseline = 'bottom';
         totals.forEach((t, i) => { if (xs[i] != null && tops[i] !== Infinity) g.fillText(fmtV(t), xs[i], tops[i] - 3); });
       } else {
-        g.textBaseline = 'bottom';
+        const horizontal = c.options.indexAxis === 'y';
         c.data.datasets.forEach((ds, di) => {
           if (!c.isDatasetVisible(di)) return;
+          const isLine = (ds.type || c.config.type) === 'line';
           c.getDatasetMeta(di).data.forEach((el, i) => {
             const v = ds.data[i];
-            if (v != null) g.fillText(fmtV(v), el.x, el.y - 3);
+            if (v == null) return;
+            const t = fmtV(v);
+            if (horizontal) {                       // value just past the end of the bar
+              g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = opts.color || '#ffffff';
+              g.fillText(t, el.x + 5, el.y);
+            } else if (isLine) {                    // value above the point, in the line's colour, with a dark outline
+              g.textAlign = 'center'; g.textBaseline = 'bottom';
+              g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = 'rgba(8,42,49,.95)'; g.strokeText(t, el.x, el.y - 6);
+              g.fillStyle = ds.borderColor || '#ffffff'; g.fillText(t, el.x, el.y - 6);
+            } else if (opts.inside && Math.abs(el.base - el.y) >= 18) {   // in the middle of a tall bar
+              g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = opts.insideColor || '#00262c';
+              g.fillText(t, el.x, (el.y + el.base) / 2);
+            } else {                                // above the bar
+              g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillStyle = opts.color || '#ffffff';
+              g.fillText(t, el.x, el.y - 3);
+            }
           });
         });
       }
@@ -442,13 +458,16 @@
         { label: 'Hours', data: d.months.map((m, i) => (has[i] ? Math.round(m.minutes / 6) / 10 : null)), backgroundColor: '#00ffff', borderRadius: 3, yAxisID: 'y' },
         { label: 'Class days', type: 'line', data: d.months.map((m, i) => (has[i] ? m.days : null)), borderColor: '#ffff00', backgroundColor: '#ffff00', tension: .3, pointRadius: 3, yAxisID: 'y1' }
       ] },
-      options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'hours' } }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'days' } } },
-        plugins: { legend: { position: 'bottom' } } }
+      options: { maintainAspectRatio: false, layout: { padding: { top: 20 } },
+        scales: { y: { beginAtZero: true, grace: '10%', title: { display: true, text: 'hours' } }, y1: { beginAtZero: true, grace: '15%', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'days' } } },
+        // Hours inside the top of each column, class days above the yellow points.
+        plugins: { legend: { position: 'bottom' }, barLabels: { mode: 'top', inside: true } } }
     });
     chart($('#c-papers'), {
       type: 'bar',
       data: { labels: paperRows.map((p) => p.label), datasets: [{ label: 'Hours', data: paperRows.map((p) => Math.round(p.minutes / 6) / 10), backgroundColor: paperRows.map((_, i) => COLORS[i % COLORS.length]), borderRadius: 3 }] },
-      options: { indexAxis: 'y', maintainAspectRatio: false, scales: { x: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+      options: { indexAxis: 'y', maintainAspectRatio: false, layout: { padding: { right: 36 } }, scales: { x: { beginAtZero: true, grace: '8%' } },
+        plugins: { legend: { display: false }, barLabels: { mode: 'top' } } }
     });
   }
 
