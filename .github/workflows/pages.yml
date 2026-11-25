@@ -15,15 +15,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Build: stamp the release and upload the site. A separate deploy job (GitHub's standard layout)
+  # gives the uploaded artifact time to register, which avoids "No artifacts named github-pages".
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      # Stamp this release: js/build.js carries the commit and time (shown in the footer), and every
-      # CSS/JS link gets ?v=<commit> so browsers load the new files without a hard refresh.
+      # Stamp this release: js/build.js carries the commit and time (shown on hover in the footer), and
+      # every CSS/JS link gets ?v=<commit> so browsers load the new files without a hard refresh.
       - name: Stamp build
         run: |
           SHA="${GITHUB_SHA::7}"
@@ -35,5 +34,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
