@@ -20,22 +20,10 @@
   </header>
 
     <main id="help-root" style="max-width:none;padding:0"></main>
+  <script src="js/version.js"></script>
   <script src="js/build.js"></script>
   <script src="js/config.js"></script>
   <script src="js/help.js"></script>
-  <script>
-    DrpHelp.render(document.getElementById("help-root"));
-    (async function () {
-      try {
-        var url = window.DRP_CONFIG.API_URL;
-        var r = await (await fetch(url + '?action=ping')).json();
-        if (!r || !r.version) return;
-        var d = new Date(r.releaseDate + 'T00:00:00');
-        var ds = isNaN(d) ? r.releaseDate : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-        document.getElementById('about-version').textContent = 'v' + r.version;
-        document.getElementById('about-date').textContent = ds;
-      } catch (e) { /* offline: leave placeholders */ }
-    })();
-  </script>
+  <script>DrpHelp.render(document.getElementById("help-root"));</script>
 </body>
 </html>

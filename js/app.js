@@ -303,8 +303,10 @@
     return `updated ${when} (${b.sha})`;
   }
   function renderFooter() {
-    const r = state.cfg.release || {};
-    $('#app-footer').innerHTML = `${esc(state.cfg.settings.title)} v${esc(r.version || '')} · ${esc(buildLabel())} · ${esc(state.cfg.settings.department)}`;
+    // One version for the whole app (website js/version.js = server APP.VERSION). Details on hover.
+    const r = state.cfg.release || {}, v = window.DRP_VERSION || r.version || '';
+    const tip = `${buildLabel()}${r.version && r.version !== v ? ` · server still on v${r.version}` : ''}`;
+    $('#app-footer').innerHTML = `<span title="${esc(tip)}">${esc(state.cfg.settings.title)} v${esc(v)}</span> · ${esc(state.cfg.settings.department)}`;
   }
   function startApp() {
     $('#login-view').hidden = true;
