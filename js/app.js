@@ -327,6 +327,7 @@
     if (name === 'faculty' && !isAdmin()) { location.replace('#/dashboard'); return; }
     state.seq++;
     $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
+    document.body.className = document.body.className.replace(/\bview-\S+/g, '').trim() + ' view-' + (VIEWS[name] ? name : 'dashboard');
     Promise.resolve(view(...args.map(decodeURIComponent))).catch(() => {});
   }
   window.addEventListener('hashchange', route);
