@@ -198,48 +198,82 @@
     config.plugins = (config.plugins || []).concat(barLabels);
     state.charts.push(new Chart(canvas, config));
   }
-  /** Numbers on the bars, like the data labels in the legacy Google Sheets charts. */
+  /**
+   * Numbers on the bars, like the data labels in the legacy Google Sheets charts.
+   * mode 'top': value above each bar. mode 'stack': each part's value inside it (when it fits)
+   * and the stack's total above it.
+   */
   const barLabels = {
     id: 'barLabels',
     afterDatasetsDraw(c, args, opts) {
-      if (!opts || !opts.on) return;
-      const g = c.ctx;
+      if (!opts || !opts.mode) return;
+      const g = c.ctx, fmtV = opts.format || String;
       g.save();
       g.font = `bold 12px ${getComputedStyle(document.body).fontFamily}`;
-      g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillStyle = '#ffffff';
-      c.data.datasets.forEach((ds, di) => {
-        if (!c.isDatasetVisible(di)) return;
-        c.getDatasetMeta(di).data.forEach((el, i) => {
-          const v = ds.data[i];
-          if (v == null) return;
-          g.fillText(String(v), el.x, el.y - 3);
+      g.textAlign = 'center'; g.fillStyle = '#ffffff';
+      if (opts.mode === 'stack') {
+        const n = c.data.labels.length, totals = new Array(n).fill(0), tops = new Array(n).fill(Infinity), xs = [];
+        c.data.datasets.forEach((ds, di) => {
+          if (!c.isDatasetVisible(di)) return;
+          c.getDatasetMeta(di).data.forEach((el, i) => {
+            const v = Number(ds.data[i]) || 0;
+            totals[i] += v; xs[i] = el.x;
+            const { y, base } = el.getProps(['y', 'base'], true);
+            tops[i] = Math.min(tops[i], y);
+            if (v && Math.abs(base - y) >= 15) { g.textBaseline = 'middle'; g.fillText(fmtV(v), el.x, (y + base) / 2); }
+          });
         });
-      });
+        g.textBaseline = 'bottom';
+        totals.forEach((t, i) => { if (xs[i] != null && tops[i] !== Infinity) g.fillText(fmtV(t), xs[i], tops[i] - 3); });
+      } else {
+        g.textBaseline = 'bottom';
+        c.data.datasets.forEach((ds, di) => {
+          if (!c.isDatasetVisible(di)) return;
+          c.getDatasetMeta(di).data.forEach((el, i) => {
+            const v = ds.data[i];
+            if (v != null) g.fillText(fmtV(v), el.x, el.y - 3);
+          });
+        });
+      }
       g.restore();
     }
   };
+  const sheetScales = (stacked) => ({
+    x: { stacked, ticks: { color: '#ffffff', font: { weight: 'bold' }, autoSkip: false, maxRotation: 50 }, grid: { display: false } },
+    y: { stacked, beginAtZero: true, ticks: { color: '#c9d7e3' }, grid: { color: 'rgba(255,255,255,.12)' } }
+  });
   /**
-   * Attendance chart in the style of the legacy sheet's "Attendance" chart: navy background,
-   * per student three columns — Total (blue), Present (green), Absent (red) — with the numbers
-   * on the bars. Leave (amber) is added only when someone has leave.
+   * Attendance chart in the colours of the legacy sheet's "Attendance" chart (navy; Present
+   * green, Absent red, Leave amber). One stacked column per student: Present + Absent (+ Leave),
+   * so the column height is the total days marked; the total is written on top.
    */
-  const ATT_COLORS = { T: '#3D85C6', P: '#34A853', A: '#FF0000', L: '#FF9900' };
+  const ATT_COLORS = { P: '#34A853', A: '#FF0000', L: '#FF9900' };
   function attendanceChart(canvas, rows) {
     const withLeave = rows.some((r) => r.L);
     const ds = [
-      { label: 'Total days', data: rows.map((r) => r.total), backgroundColor: ATT_COLORS.T },
       { label: 'Present', data: rows.map((r) => r.P), backgroundColor: ATT_COLORS.P },
       { label: 'Absent', data: rows.map((r) => r.A), backgroundColor: ATT_COLORS.A },
       ...(withLeave ? [{ label: 'Leave', data: rows.map((r) => r.L), backgroundColor: ATT_COLORS.L }] : [])
     ];
     chart(canvas, {
       type: 'bar',
-      data: { labels: rows.map((r) => (r.pct != null ? [r.name, r.pct + '%'] : r.name)), datasets: ds.map((d) => ({ ...d, borderRadius: 2, maxBarThickness: 46 })) },
+      data: { labels: rows.map((r) => (r.pct != null ? [r.name, r.pct + '%'] : r.name)), datasets: ds.map((d) => ({ ...d, maxBarThickness: 54 })) },
       options: {
-        maintainAspectRatio: false, layout: { padding: { top: 22 } },
-        scales: { x: { ticks: { color: '#ffffff', font: { weight: 'bold' } }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: '#c9d7e3' }, grid: { color: 'rgba(255,255,255,.12)' } } },
-        plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { on: true },
-          tooltip: { callbacks: { title: (it) => rows[it[0].dataIndex].name } } }
+        maintainAspectRatio: false, layout: { padding: { top: 22 } }, scales: sheetScales(true),
+        plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { mode: 'stack' },
+          tooltip: { callbacks: { title: (it) => `${rows[it[0].dataIndex].name}: ${rows[it[0].dataIndex].total} days marked` } } }
+      }
+    });
+  }
+  /** Faculty hours, like the legacy "Faculty - Hours" chart (navy, blue columns, hours on top). */
+  function facultyChart(canvas, list) {
+    chart(canvas, {
+      type: 'bar',
+      data: { labels: list.map((f) => f.name), datasets: [{ label: 'Hours', data: list.map((f) => Math.round(f.minutes / 6) / 10), backgroundColor: '#3D85C6', maxBarThickness: 46 }] },
+      options: {
+        maintainAspectRatio: false, layout: { padding: { top: 22 } }, scales: sheetScales(false),
+        plugins: { legend: { display: false }, barLabels: { mode: 'top' },
+          tooltip: { callbacks: { label: (it) => `${minToHM(list[it.dataIndex].minutes)} h on ${list[it.dataIndex].days} day(s)` } } }
       }
     });
   }
@@ -348,6 +382,8 @@
     if (!d) return;
     const s = state.cfg.settings, me = state.cfg.me;
     const att = d.attendance;
+    // Faculty only (activities such as Seminar or Exam are left out, as in the legacy "Faculty - Hours" chart).
+    const facList = (d.faculty || []).filter((f) => f.type !== 'Activity');
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + (x.pct || 0), 0) / att.filter((x) => x.pct != null).length || 0) / 10 : null;
     const papers = state.cfg.papers.filter((p) => p.program === state.program);
     const paperRows = papers.map((p) => ({ label: p.short || p.code, minutes: d.paperMinutes[p.code] || 0 }));
@@ -369,10 +405,16 @@
         <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
         <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div></div>
       </div>
-      <div class="panel chart-sheet"><h2>Attendance</h2>
-        ${att.length ? '<div class="chart-box"><canvas id="c-att" aria-label="Attendance: total days, present and absent per student"></canvas></div>' : '<div class="empty">No students yet.</div>'}
+      <div class="grid two">
+        <div class="panel chart-sheet"><h2>Attendance</h2>
+          ${att.length ? '<div class="chart-box"><canvas id="c-att" aria-label="Attendance per student: present and absent days stacked"></canvas></div>' : '<div class="empty">No students yet.</div>'}
+        </div>
+        <div class="panel chart-sheet"><h2>Faculty - Hours</h2>
+          ${facList.length ? '<div class="chart-box"><canvas id="c-fac" aria-label="Teaching hours per faculty member"></canvas></div>' : '<div class="empty">No classes logged yet.</div>'}
+        </div>
       </div>`);
     if (att.length) attendanceChart($('#c-att'), att);
+    if (facList.length) facultyChart($('#c-fac'), facList);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
     chart($('#c-hours'), {
       type: 'bar',
