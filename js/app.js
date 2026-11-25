@@ -412,7 +412,27 @@
         <div class="panel chart-sheet"><h2>Faculty - Hours</h2>
           ${facList.length ? '<div class="chart-box"><canvas id="c-fac" aria-label="Teaching hours per faculty member"></canvas></div>' : '<div class="empty">No classes logged yet.</div>'}
         </div>
+      </div>
+      <div class="panel chart-sheet"><h2 style="text-align:left">${esc(state.program)}: Working Days vs Productive Days</h2>
+        <div class="chart-box"><canvas id="c-work" aria-label="Working days (attendance taken) and productive days (classes held) per month"></canvas></div>
+        <p class="note" style="color:#c9d7e3;margin:8px 0 0">Working days: days attendance was taken. Productive days: days with at least one class (with times) logged.</p>
       </div>`);
+    {
+      // Like the legacy Home chart: one pair of columns per month of the batch, numbers on top.
+      const ms = d.months;
+      chart($('#c-work'), {
+        type: 'bar',
+        data: { labels: ms.map((m) => m.label.slice(0, 3).toUpperCase() + " '" + m.label.slice(-2)), datasets: [
+          { label: 'Working days', data: ms.map((m) => m.workingDays || 0), backgroundColor: '#3D85C6', maxBarThickness: 34 },
+          { label: 'Productive days', data: ms.map((m) => m.days), backgroundColor: '#EA4335', maxBarThickness: 34 }
+        ] },
+        options: {
+          maintainAspectRatio: false, layout: { padding: { top: 22 } }, scales: sheetScales(false),
+          plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { mode: 'top' },
+            tooltip: { callbacks: { title: (it) => ms[it[0].dataIndex].label } } }
+        }
+      });
+    }
     if (att.length) attendanceChart($('#c-att'), att);
     if (facList.length) facultyChart($('#c-fac'), facList);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
