@@ -806,16 +806,27 @@
     $('#imp-run').onclick = async () => {
       if (!(await confirmBox('Import from legacy sheet', 'Read the legacy DRP Manager sheet and copy its data into DRP Manager? This can take up to a minute.', 'Import'))) return;
       const btn = $('#imp-run'), out = $('#imp-out');
-      btn.disabled = true; btn.textContent = 'Importing…';
+      const steps = [['master', 'Students, faculty, syllabus, holidays, report log'], ['sessions', 'Class log (month tabs)'], ['attendance', 'Attendance'], ['assessments', 'Exams, class tests, assignments']];
+      const line = (k, v) => `  ${k}: ${typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ') : v}`;
+      const log = [];
+      out.hidden = false;
+      btn.disabled = true;
       try {
-        const res = await write('importLegacy', { sourceId: $('#imp-id').value.trim() });
-        if (res) {
-          out.hidden = false;
-          const line = (k, v) => `${k}: ${typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ') : v}`;
-          out.textContent = Object.entries(res).filter(([k]) => k !== 'notes').map(([k, v]) => line(k, v)).join('\n') + (res.notes.length ? '\n\n' + res.notes.join('\n') : '');
-          toast('Import finished.');
-          await refreshConfig();
+        for (let i = 0; i < steps.length; i++) {
+          const [step, label] = steps[i];
+          btn.textContent = `Importing ${i + 1}/${steps.length}…`;
+          out.textContent = log.concat(`Step ${i + 1}/${steps.length}: ${label}…`).join('\n');
+          let res;
+          try { res = await write('importLegacy', { sourceId: $('#imp-id').value.trim(), step }); }
+          catch (e) { log.push(`Step ${i + 1}/${steps.length}: ${label} — FAILED: ${e.message}`); out.textContent = log.join('\n'); return; }
+          if (!res) return;
+          log.push(`Step ${i + 1}/${steps.length}: ${label} — done`);
+          Object.entries(res).filter(([k]) => k !== 'notes' && k !== 'step').forEach(([k, v]) => log.push(line(k, v)));
+          (res.notes || []).forEach((n) => log.push('  Note: ' + n));
+          out.textContent = log.join('\n');
         }
+        toast('Import finished.');
+        await refreshConfig();
       } finally { btn.disabled = false; btn.textContent = 'Run import'; }
     };
   }
