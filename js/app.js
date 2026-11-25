@@ -204,7 +204,7 @@
   }
   function renderFooter() {
     const r = state.cfg.release || {};
-    $('#app-footer').innerHTML = `${esc(state.cfg.settings.title)} v${esc(r.version || '')} · ${esc(state.cfg.settings.department)} · <a href="help.html">Help</a>`;
+    $('#app-footer').innerHTML = `${esc(state.cfg.settings.title)} v${esc(r.version || '')} · ${esc(state.cfg.settings.department)}`;
   }
   function startApp() {
     $('#login-view').hidden = true;
@@ -260,23 +260,15 @@
         <div class="kpi"><div class="label">${isAdmin() ? 'Average attendance' : 'My attendance'}</div><div class="value">${pct(isAdmin() ? avg : (att[0] ? att[0].pct : null))}</div>
           <div class="hint">${isAdmin() ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
       </div>
-      ${isAdmin() && d.reportsPending.length ? `<div class="warn-box">Monthly reports not yet marked as sent: <b>${d.reportsPending.map(esc).join(', ')}</b>. <a href="#/reports">Open reports</a></div>` : ''}
       <div class="grid two" style="margin-top:16px">
         <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
         <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div></div>
-        <div class="panel"><h2>Attendance</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Student</th><th class="num">Present</th><th class="num">Absent</th><th class="num">Leave</th><th class="num">Days</th><th class="num">%</th></tr></thead>
-            <tbody>${att.map((a) => `<tr><td class="tech">${esc(a.name)}</td><td class="num">${a.P}</td><td class="num">${a.A}</td><td class="num">${a.L}</td><td class="num">${a.total}</td><td class="num grand">${pct(a.pct)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No students yet.</td></tr>'}</tbody>
-          </table></div>
-        </div>
-        <div class="panel"><h2>Recent classes</h2>
-          <div class="table-wrap"><table class="fit">
-            <thead><tr><th style="width:110px">Date</th><th>Topic</th><th>Faculty / activity</th><th class="num" style="width:60px">Hrs</th></tr></thead>
-            <tbody>${d.recent.map((r) => `<tr><td>${fmtShort(r.date)}</td><td class="wrap">${esc(r.topicCode ? `(${r.topicCode}) ${r.topic}` : r.topic)}</td><td class="wrap">${esc(r.faculty.map((f) => f.name).join(', '))}</td><td class="num">${minToHM(r.minutes)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No classes logged yet.</td></tr>'}</tbody>
-          </table></div>
-          ${d.upcomingHolidays.length ? `<p class="note" style="margin-top:10px">Upcoming holidays: ${d.upcomingHolidays.map((h) => `${esc(h.name)} (${fmtDate(h.date)})`).join(' · ')}</p>` : ''}
-        </div>
+      </div>
+      <div class="panel"><h2>Attendance</h2>
+        <div class="table-wrap"><table class="fit">
+          <thead><tr><th>Student</th><th class="num">Present</th><th class="num">Absent</th><th class="num">Leave</th><th class="num">Days</th><th class="num">%</th></tr></thead>
+          <tbody>${att.map((a) => `<tr><td class="tech">${esc(a.name)}</td><td class="num">${a.P}</td><td class="num">${a.A}</td><td class="num">${a.L}</td><td class="num">${a.total}</td><td class="num grand">${pct(a.pct)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No students yet.</td></tr>'}</tbody>
+        </table></div>
       </div>`);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
     chart($('#c-hours'), {
@@ -394,8 +386,9 @@
         <button class="btn" type="button" onclick="window.print()">Print</button>
       </div>
       <div class="table-wrap"><table class="att-grid">
+        <colgroup><col class="c-name">${d.days.map(() => '<col>').join('')}<col class="c-n"><col class="c-n"><col class="c-n"><col class="c-pct"><col class="c-pct"></colgroup>
         <thead><tr><th>Student</th>${d.days.map((x) => `<th class="day ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')}" title="${esc(x.holiday ? x.holiday.name : '')}">${parseDs(x.date).getDate()}<br>${DOW[x.dow].slice(0, 2)}</th>`).join('')}
-          <th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num">Month %</th><th class="num">Overall %</th></tr></thead>
+          <th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num" title="This month">Month</th><th class="num" title="Whole batch so far">Overall</th></tr></thead>
         <tbody>${d.students.map((s) => `<tr data-sid="${esc(s.id)}"><td class="tech">${esc(s.name)}</td>
           ${d.days.map((x) => { const v = s.marks[x.date] || ''; return `<td class="mark m-${v} ${isAdmin() ? 'editable' : ''} ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')} ${x.date === today ? 'today' : ''}" data-date="${x.date}" title="${fmtDate(x.date)}${x.classDay ? ' · class day' : ''}">${v}</td>`; }).join('')}
           <td class="num">${s.month.P}</td><td class="num">${s.month.A}</td><td class="num">${s.month.L}</td><td class="num">${pct(s.month.pct)}</td><td class="num grand">${pct(s.overall.pct)}</td></tr>`).join('') || `<tr><td colspan="${d.days.length + 6}" class="empty">No students.</td></tr>`}

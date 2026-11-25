@@ -311,3 +311,19 @@ dialog .form-grid { margin-top: 8px; }
 .choice-row label.choice { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; background: var(--cell); }
 .choice-row label.choice:has(input:checked) { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
 .choice-row input { width: auto; min-height: 0; accent-color: var(--cyan); }
+/* Attendance grid fits the page width: fixed layout, the 28–31 day columns share the space. */
+.att-grid { table-layout: fixed; width: 100%; font-size: 12px !important; }
+.att-grid col.c-name { width: 150px; }
+.att-grid col.c-n { width: 32px; }
+.att-grid col.c-pct { width: 62px; }
+.att-grid th, .att-grid td { padding: 4px 2px; }
+.att-grid td.tech { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 6px; }
+.att-grid th.day, .att-grid td.mark { min-width: 0; padding: 3px 0; font-size: 11px; }
+.att-grid thead th { white-space: nowrap; }
+html.font-courier .att-grid th.day { letter-spacing: -0.5px; }
+@media (max-width: 900px) {
+  .att-grid col.c-name { width: 90px; }
+  .att-grid col.c-pct { width: 44px; }
+  .att-grid col.c-n { width: 22px; }
+  .att-grid th.day, .att-grid td.mark { font-size: 9px; }
+}
