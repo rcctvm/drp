@@ -327,3 +327,56 @@ html.font-courier .att-grid th.day { letter-spacing: -0.5px; }
   .att-grid col.c-n { width: 22px; }
   .att-grid th.day, .att-grid td.mark { font-size: 9px; }
 }
+
+/* ---------- Charts in the legacy Google Sheets style (navy, white titles) ---------- */
+.panel.chart-sheet { background: #0E2D4A; border-color: #1d4a73; }
+.panel.chart-sheet h2 { color: #ffffff; text-align: center; font-family: "Courier New", Courier, monospace; font-weight: 700; font-size: 20px; }
+.panel.chart-sheet .chart-box { height: 320px; }
+
+/* ---------- Academic calendar (format of "DRP Manager - Calendar.pdf") ---------- */
+.acal { --navy: #17375E; --mbar: #3B6698; --sun: #4A76AB; --grid: #1b2a3a;
+  background: #ffffff; color: #000; border: 6px solid var(--navy); font-family: Arial, Helvetica, sans-serif; max-width: 1180px; margin: 0 auto; }
+.acal-head { display: flex; align-items: center; gap: 18px; background: var(--navy); color: #fff; padding: 10px 18px; }
+.acal-logo { display: flex; align-items: center; gap: 10px; padding-right: 18px; border-right: 1px solid rgba(255,255,255,.3); font-family: Georgia, "Times New Roman", serif; font-size: 13px; line-height: 1.15; letter-spacing: .5px; }
+.acal-logo img { width: 58px; height: 58px; border-radius: 50%; background: #fff; }
+.acal-head h2 { color: #fff; margin: 0; flex: 1; text-align: center; font: 700 clamp(18px, 2.3vw, 30px)/1.2 Roboto, Arial, sans-serif; }
+.acal-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 26px; padding: 12px 10px 14px; }
+table.acal-month { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12.5px; font-variant-numeric: tabular-nums; border: 2px solid var(--grid); }
+table.acal-month th, table.acal-month td { border: 1px solid var(--grid); padding: 1px 0; text-align: center; white-space: nowrap; height: 19px; position: static; }
+table.acal-month th.mname { background: var(--mbar); color: #fff; font-weight: 700; font-size: 13px; }
+table.acal-month tr.wd th { background: #000; color: #fff; font-weight: 700; font-size: 12px; }
+table.acal-month td { background: #fff; color: #000; }
+table.acal-month td.sun { background: var(--sun); color: #fff; }
+table.acal-month td.painted { font-weight: 700; }
+table.acal-month td.hday { font-weight: 700; }
+table.acal-month td.today { outline: 2px solid #000; outline-offset: -3px; }
+table.acal-month td[title] { cursor: help; }
+.acal-key { display: grid; grid-template-columns: 1.15fr 1.15fr .8fr; gap: 0 22px; padding: 8px 10px 12px; border-top: 8px solid var(--navy); font-size: 11.5px; font-weight: 700; }
+.acal-key .krow { display: flex; align-items: stretch; border-bottom: 1px solid #000; min-height: 21px; }
+.acal-key .krow i { width: 34px; flex: none; border: 1px solid #000; }
+.acal-key .krow span { padding: 2px 6px; align-self: center; }
+.acal-holbar { background: #000; color: #fff; text-align: center; font-weight: 700; letter-spacing: 2px; padding: 6px; font-size: 13px; }
+.acal-hols { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 0 30px; padding: 0 0 14px; }
+.acal-hols table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.acal-hols th, .acal-hols td { border: 1px solid #000; padding: 3px 6px; text-align: left; white-space: nowrap; position: static; }
+.acal-hols td { background: #fff !important; color: #000; }
+.acal-hols tr.hyear th { background: var(--navy); color: #fff; text-align: center; font-weight: 700; }
+.acal-hols tr.hsect th { background: #000; color: #fff; text-align: center; font-weight: 700; }
+.acal-hols tr.hhead th { background: var(--navy); color: #fff; font-weight: 700; }
+.acal-hols td:first-child, .acal-hols th:first-child { width: 34px; text-align: center; }
+.acal-hols td.none { color: #777; text-align: center; }
+@media (max-width: 1100px) { .acal-grid { grid-template-columns: repeat(2, 1fr); } .acal-key { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .acal-grid { grid-template-columns: 1fr; } .acal-head { flex-direction: column; } .acal-logo { border: none; } .acal-hols { grid-template-columns: 1fr; } }
+@media print {
+  @page { size: A4 portrait; margin: 6mm; }
+  .acal, .acal * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .acal { border-width: 4px; max-width: none; }
+  .acal-head, .acal-head * , .acal-holbar, .acal-hols th { color: #fff !important; }
+  .acal-grid { grid-template-columns: repeat(4, 1fr); gap: 8px 14px; }
+  table.acal-month { font-size: 9px; } table.acal-month th, table.acal-month td { height: 14px; }
+  table.acal-month td.sun, table.acal-month th.mname, table.acal-month tr.wd th { color: #fff !important; }
+  .acal-key { grid-template-columns: 1.15fr 1.15fr .8fr; font-size: 8px; }
+  .acal-hols { grid-template-columns: 1fr 1fr; } .acal-hols table { font-size: 9px; }
+  .panel.chart-sheet { background: #0E2D4A !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+table.acal-month td.painted { color: var(--ink, #000) !important; }

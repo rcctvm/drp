@@ -19,7 +19,9 @@
   }
   let memToken = readToken();
   // Server data version: every response carries it; when it changes, cached pages are stale.
+  // Remembered across reloads so pages saved by the browser are dropped as soon as the server's data changed.
   let dataVersion = null;
+  try { dataVersion = localStorage.getItem('drp.v'); } catch (e) {}
   const versionListeners = [];
 
   async function call(action, params = {}) {
@@ -36,6 +38,7 @@
     try { json = await res.json(); } catch (e) { throw new Error('Unexpected server response.'); }
     if (json.v && json.v !== dataVersion) {
       const prev = dataVersion; dataVersion = json.v;
+      try { localStorage.setItem('drp.v', json.v); } catch (e) {}
       if (prev !== null) versionListeners.forEach((fn) => { try { fn(json.v); } catch (e) {} });
     }
     if (json.token) setToken(json.token, remembered());   // sliding session renewal

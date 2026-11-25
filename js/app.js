@@ -15,20 +15,65 @@
   const state = { role: null, cfg: null, charts: [], seq: 0, program: 'DRP1' };
   const isAdmin = () => state.role === 'admin';
 
-  // ---------- page cache (stale-while-revalidate), as in UNITY ----------
+  // ---------- page cache (stale-while-revalidate) ----------
+  // Pages open instantly from memory (and, after a reload, from this browser's storage); a
+  // background request refreshes them and the page redraws only if the data changed. Any write
+  // on the server changes the data version, which empties the cache. Signing out clears it.
   const cache = new Map();
   const FRESH_MS = 30000;
+  const PAGES_KEY = 'drp.pages';
   const strip = (k, v) => (k === 'generatedAt' ? undefined : v);
-  API.onVersionChange(() => cache.clear());
+  let persistTimer = null;
+  const cacheSet = (key, data) => { cache.set(key, { data, at: Date.now() }); schedulePersist(); };
+  function schedulePersist() {
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      try { localStorage.setItem(PAGES_KEY, JSON.stringify({ user: state.username, items: [...cache] })); }
+      catch (e) { try { localStorage.removeItem(PAGES_KEY); } catch (e2) {} }   // storage full: skip
+    }, 400);
+  }
+  function restorePages() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PAGES_KEY) || 'null');
+      if (saved && saved.user === state.username) saved.items.forEach(([k, v]) => cache.set(k, { data: v.data, at: 0 }));   // at 0 = refresh in background
+    } catch (e) {}
+  }
+  function clearPages() { cache.clear(); try { localStorage.removeItem(PAGES_KEY); } catch (e) {} }
+  API.onVersionChange(() => clearPages());
+  const pageKey = (action, params) => action + JSON.stringify(params);
+
+  /** Loads the pages people open most, in ONE request, right after sign-in. */
+  async function prefetch() {
+    if (!state.cfg) return;
+    const p = state.program, m = defaultMonth(), ms = batchMonths();
+    const i = ms.findIndex((x) => x.key === m.key), pm = ms[Math.max(0, i - 1)] || m;
+    const want = [
+      ['dashboard', { program: p }],
+      ['sessions', { program: p, year: m.year, month: m.monthNo }],
+      ['attendance', { program: p, year: m.year, month: m.monthNo }],
+      ['syllabus', { program: p }],
+      ['exams', { program: p }],
+      ['tasks', { program: p, kind: 'ClassTest' }],
+      ['tasks', { program: p, kind: 'Assignment' }],
+      ['calendar', { program: p }],
+      ['monthlyReport', { program: p, year: pm.year, month: pm.monthNo }],
+      ...(isAdmin() ? [['reportLog', { program: p }], ['faculty', { program: p }]] : [['reportCard', { studentId: state.cfg.me.studentId }]])
+    ].filter(([a, prm]) => { const h = cache.get(pageKey(a, prm)); return !h || Date.now() - h.at > FRESH_MS; });
+    if (!want.length) return;
+    try {
+      const res = await API.call('batch', { calls: want.map(([action, params]) => ({ action, params })) });
+      res.forEach((r, k) => { if (r.ok) cacheSet(pageKey(want[k][0], want[k][1]), r.data); });
+    } catch (e) { /* prefetch is best-effort */ }
+  }
   async function cachedLoad(action, params, rerender) {
-    const key = action + JSON.stringify(params);
+    const key = pageKey(action, params);
     const hit = cache.get(key);
     const seq = state.seq;
     if (hit) {
       if (Date.now() - hit.at > FRESH_MS) {
         API.call(action, params).then((data) => {
           const changed = JSON.stringify(data, strip) !== JSON.stringify(hit.data, strip);
-          cache.set(key, { data, at: Date.now() });
+          cacheSet(key, data);
           if (changed && seq === state.seq) rerender();
         }).catch(() => {});
       }
@@ -36,12 +81,13 @@
     }
     loading();
     const data = await guarded(() => API.call(action, params));
-    if (data !== undefined) cache.set(key, { data, at: Date.now() });
+    if (data !== undefined) cacheSet(key, data);
     return seq === state.seq ? data : undefined;
   }
   async function write(action, params) {
     const data = await guarded(() => API.call(action, params));
-    cache.clear();
+    clearPages();
+    setTimeout(prefetch, 300);   // reload the common pages in the background after a change
     return data;
   }
   function saveCfg() {
@@ -149,7 +195,53 @@
     Chart.defaults.color = '#a9c7cd';
     Chart.defaults.borderColor = 'rgba(31,107,122,.5)';
     Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    config.plugins = (config.plugins || []).concat(barLabels);
     state.charts.push(new Chart(canvas, config));
+  }
+  /** Numbers on the bars, like the data labels in the legacy Google Sheets charts. */
+  const barLabels = {
+    id: 'barLabels',
+    afterDatasetsDraw(c, args, opts) {
+      if (!opts || !opts.on) return;
+      const g = c.ctx;
+      g.save();
+      g.font = `bold 12px ${getComputedStyle(document.body).fontFamily}`;
+      g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillStyle = '#ffffff';
+      c.data.datasets.forEach((ds, di) => {
+        if (!c.isDatasetVisible(di)) return;
+        c.getDatasetMeta(di).data.forEach((el, i) => {
+          const v = ds.data[i];
+          if (v == null) return;
+          g.fillText(String(v), el.x, el.y - 3);
+        });
+      });
+      g.restore();
+    }
+  };
+  /**
+   * Attendance chart in the style of the legacy sheet's "Attendance" chart: navy background,
+   * per student three columns — Total (blue), Present (green), Absent (red) — with the numbers
+   * on the bars. Leave (amber) is added only when someone has leave.
+   */
+  const ATT_COLORS = { T: '#3D85C6', P: '#34A853', A: '#FF0000', L: '#FF9900' };
+  function attendanceChart(canvas, rows) {
+    const withLeave = rows.some((r) => r.L);
+    const ds = [
+      { label: 'Total days', data: rows.map((r) => r.total), backgroundColor: ATT_COLORS.T },
+      { label: 'Present', data: rows.map((r) => r.P), backgroundColor: ATT_COLORS.P },
+      { label: 'Absent', data: rows.map((r) => r.A), backgroundColor: ATT_COLORS.A },
+      ...(withLeave ? [{ label: 'Leave', data: rows.map((r) => r.L), backgroundColor: ATT_COLORS.L }] : [])
+    ];
+    chart(canvas, {
+      type: 'bar',
+      data: { labels: rows.map((r) => (r.pct != null ? [r.name, r.pct + '%'] : r.name)), datasets: ds.map((d) => ({ ...d, borderRadius: 2, maxBarThickness: 46 })) },
+      options: {
+        maintainAspectRatio: false, layout: { padding: { top: 22 } },
+        scales: { x: { ticks: { color: '#ffffff', font: { weight: 'bold' } }, grid: { display: false } }, y: { beginAtZero: true, ticks: { color: '#c9d7e3' }, grid: { color: 'rgba(255,255,255,.12)' } } },
+        plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { on: true },
+          tooltip: { callbacks: { title: (it) => rows[it[0].dataIndex].name } } }
+      }
+    });
   }
   function setMain(html) { destroyCharts(); $('#main').innerHTML = html; }
   function loading() { setMain('<div class="loading">Loading…</div>'); }
@@ -176,7 +268,7 @@
   }
   function logout() {
     API.setToken('', false);
-    cache.clear();
+    clearPages();
     try { localStorage.removeItem('drp.cfg'); } catch (e) {}
     state.role = null; state.username = '';
     $('#login-key').value = '';
@@ -213,7 +305,9 @@
     renderBadge();
     if (state.cfg.settings.department) $('#dept-line').textContent = state.cfg.settings.department;
     renderFooter();
+    if (!cache.size) restorePages();
     route();
+    setTimeout(prefetch, 50);
   }
   async function refreshConfig() {
     const data = await guarded(() => API.call('bootstrap'));
@@ -264,12 +358,10 @@
         <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
         <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div></div>
       </div>
-      <div class="panel"><h2>Attendance</h2>
-        <div class="table-wrap"><table class="fit">
-          <thead><tr><th>Student</th><th class="num">Present</th><th class="num">Absent</th><th class="num">Leave</th><th class="num">Days</th><th class="num">%</th></tr></thead>
-          <tbody>${att.map((a) => `<tr><td class="tech">${esc(a.name)}</td><td class="num">${a.P}</td><td class="num">${a.A}</td><td class="num">${a.L}</td><td class="num">${a.total}</td><td class="num grand">${pct(a.pct)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No students yet.</td></tr>'}</tbody>
-        </table></div>
+      <div class="panel chart-sheet"><h2>Attendance</h2>
+        ${att.length ? '<div class="chart-box"><canvas id="c-att" aria-label="Attendance: total days, present and absent per student"></canvas></div>' : '<div class="empty">No students yet.</div>'}
       </div>`);
+    if (att.length) attendanceChart($('#c-att'), att);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
     chart($('#c-hours'), {
       type: 'bar',
@@ -385,6 +477,7 @@
           <button class="btn primary" type="button" id="att-save" disabled>Save</button>` : ''}
         <button class="btn" type="button" onclick="window.print()">Print</button>
       </div>
+      ${d.students.length ? `<div class="panel chart-sheet"><h2>Attendance — ${MONTHS[d.monthNo - 1]} ${d.year}</h2><div class="chart-box"><canvas id="c-att-month" aria-label="Attendance this month per student"></canvas></div></div>` : ''}
       <div class="table-wrap"><table class="att-grid">
         <colgroup><col class="c-name">${d.days.map(() => '<col>').join('')}<col class="c-n"><col class="c-n"><col class="c-n"><col class="c-pct"><col class="c-pct"></colgroup>
         <thead><tr><th>Student</th>${d.days.map((x) => `<th class="day ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')}" title="${esc(x.holiday ? x.holiday.name : '')}">${parseDs(x.date).getDate()}<br>${DOW[x.dow].slice(0, 2)}</th>`).join('')}
@@ -396,6 +489,7 @@
       </table></div>
       <p class="note">Shaded columns: Sundays and RCC holidays. Days with a logged class are marked “class day” in the tooltip.</p>`);
     wireMonthPicker('att-month', '#/attendance');
+    if (d.students.length) attendanceChart($('#c-att-month'), d.students.map((s) => ({ name: s.name, ...s.month })));
     if (!isAdmin()) return;
     const saveBtn = $('#att-save');
     const setCell = (td, v) => {
@@ -588,36 +682,12 @@
 
   // ---------- Calendar ----------
   async function viewCalendar() {
-    const d = await cachedLoad('calendar', {}, viewCalendar);
+    const d = await cachedLoad('calendar', { program: state.program }, viewCalendar);
     if (!d) return;
-    const hol = {}; d.holidays.forEach((h) => { hol[h.date] = h; });
-    const ev = {}; d.events.filter((e) => e.program === state.program).forEach((e) => { (ev[e.date] = ev[e.date] || []).push(e); });
-    const today = todayDs();
-    const monthCal = (m) => {
-      const first = new Date(m.year, m.monthNo - 1, 1), days = new Date(m.year, m.monthNo, 0).getDate();
-      const cells = []; for (let i = 0; i < first.getDay(); i++) cells.push('<td></td>');
-      for (let dd = 1; dd <= days; dd++) {
-        const k = `${m.key}-${String(dd).padStart(2, '0')}`, c = d.classDays[k], h = hol[k], e = ev[k];
-        const cls = [h ? 'hol' : '', c && c.programs.includes(state.program) ? 'cls' : '', e ? 'ev' : '', k === today ? 'today' : '', new Date(m.year, m.monthNo - 1, dd).getDay() === 0 && !h ? 'off' : ''].join(' ');
-        const tip = [h ? h.name : '', c ? `${c.sessions} session(s), ${minToHM(c.minutes)} h` : '', ...(e || []).map((x) => `${x.kind}: ${x.title}`)].filter(Boolean).join(' · ');
-        cells.push(`<td class="${cls}" title="${esc(tip)}">${dd}</td>`);
-      }
-      const rows = []; for (let i = 0; i < cells.length; i += 7) rows.push(`<tr>${cells.slice(i, i + 7).join('')}</tr>`);
-      return `<div class="cal"><h3>${MONTHS[m.monthNo - 1]} ${m.year}</h3><table><thead><tr>${DOW.map((x) => `<th>${x.slice(0, 2)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
-    };
-    const upcoming = d.events.filter((e) => e.program === state.program && e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 12);
     setMain(`
-      <div class="toolbar"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · batch ${esc(state.cfg.settings.batch)}</div></div>
-        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()">Print</button></div>
-      <div class="legend"><span><i style="background:rgba(0,255,255,.35)"></i>Class day</span><span><i style="background:#2a0d14;border:1px solid #ff8aa0"></i>RCC holiday</span><span><i style="box-shadow:inset 0 -3px 0 #ffff00;background:#000"></i>Exam / test / assignment due</span></div>
-      <div class="cal-grid">${d.months.map(monthCal).join('')}</div>
-      <div class="grid two" style="margin-top:16px">
-        <div class="panel"><h2>RCC holidays</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>
-          <tbody>${d.holidays.filter((h) => !d.months.length || (h.date >= d.months[0].key && h.date.slice(0, 7) <= d.months[d.months.length - 1].key)).map((h) => `<tr><td>${fmtDate(h.date)}</td><td>${DOW[parseDs(h.date).getDay()]}</td><td class="wrap">${esc(h.name)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No holidays entered.</td></tr>'}</tbody></table></div>
-          ${isAdmin() ? '<p class="note">Edit holidays in Settings › Holidays.</p>' : ''}</div>
-        <div class="panel"><h2>Coming up</h2><div class="table-wrap"><table class="fit"><thead><tr><th style="width:110px">Date</th><th style="width:130px">What</th><th>Details</th></tr></thead>
-          <tbody>${upcoming.map((e) => `<tr><td>${fmtShort(e.date)}</td><td>${esc(e.kind)}</td><td class="wrap">${esc(e.title)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nothing scheduled.</td></tr>'}</tbody></table></div></div>
-      </div>`);
+      <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · batch ${esc(state.cfg.settings.batch)} · hover a date for details${isAdmin() ? ' · edit events and holidays in Settings' : ''}</div></div>
+        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
+      ${window.DrpCalendar.render(d, { today: todayDs() })}`);
   }
 
   // ---------- Reports ----------
@@ -767,6 +837,8 @@
       ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Code', 'Code', 100], ['Title', 'Title', 320], ['Short', 'Short name', 120]] },
     Topics: { title: 'Syllabus topics', hint: 'Topic codes as used in the class log, e.g. THE01. Sub-topics come from the legacy import.', cols: [
       ['Code', 'Code', 80], ['Name', 'Name', 300], ['PaperCode', 'Paper', 100], ['Subject', 'Subject', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Events: { title: 'Academic calendar events', hint: 'Numbered key of the academic calendar. Dates = optional list (yyyy-mm-dd, comma separated) that replaces Start–End, e.g. exam days only. Colour as #RRGGBB.', cols: [
+      ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Title', 'Event', 300], ['Start', 'Start', 150, 'date'], ['End', 'End', 150, 'date'], ['Dates', 'Only these dates (optional)', 220], ['Color', 'Colour', 90, 'color'], ['SkipSundays', 'Skip Sundays', 70, 'bool']] },
     Holidays: { title: 'Holidays', hint: 'RCC closed and compensatory holidays (shaded in the class log, attendance and calendar).', cols: [
       ['Date', 'Date', 150, 'date'], ['Name', 'Holiday', 280], ['Type', 'Type', 140, ['Closed', 'Compensatory']]] },
     Settings: { title: 'Application settings', hint: 'Batch dates set which months appear everywhere (yyyy-mm-dd).', cols: [['Key', 'Key', 200], ['Value', 'Value', 420]] }
@@ -868,6 +940,7 @@
       if (Array.isArray(type)) return `<select name="${name}" ${aria}>${type.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}${v && !type.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select>`;
       if (type === 'bool') return `<input type="checkbox" name="${name}" ${v === '' || v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;
       if (type === 'date') return `<input type="date" name="${name}" value="${esc(v)}" ${aria}>`;
+      if (type === 'color') return `<input type="color" name="${name}" value="${esc(/^#[0-9a-f]{6}$/i.test(v) ? v : '#888888')}" ${aria} style="padding:2px;min-height:32px">`;
       return `<input name="${name}" value="${esc(v)}" ${aria}>`;
     };
     const draw = () => {
