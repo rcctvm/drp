@@ -791,11 +791,11 @@
     setMain(`<h1>Settings</h1>
       <details class="sect" open><summary>Import from the legacy sheet<span class="sect-hint">read-only</span></summary><div class="sect-body">
         <p>Copies the DRP1 2025-26 data from the Google Sheet <b>DRP Manager</b> (DRP1 › 2025-26): students, faculty, syllabus, class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log.
-        The legacy sheet is only read, never changed. Re-running is safe: anything entered or edited here is kept.</p>
+        The legacy sheet is only read, never changed.</p>
         <div class="toolbar"><div class="field" style="min-width:360px"><label for="imp-id">Legacy spreadsheet ID</label><input id="imp-id" value="${esc((d.Settings.find((s) => s.Key === 'LegacySpreadsheetId') || {}).Value || '')}"></div>
           <button class="btn primary" type="button" id="imp-run">Run import</button></div>
         <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
-        <p class="note">Last import: ${esc((d.Settings.find((s) => s.Key === 'LastLegacyImport') || {}).Value || 'never')}</p>
+        <p class="note">Last import: <span id="imp-last">${(() => { const v = (d.Settings.find((s) => s.Key === 'LastLegacyImport') || {}).Value; return v ? esc(new Date(v).toLocaleString('en-GB')) : 'never'; })()}</span>. Re-running never creates duplicates: earlier imported rows are replaced, and anything entered or edited here is kept.</p>
       </div></details>
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
@@ -826,6 +826,7 @@
           out.textContent = log.join('\n');
         }
         toast('Import finished.');
+        $('#imp-last').textContent = new Date().toLocaleString('en-GB');
         await refreshConfig();
       } finally { btn.disabled = false; btn.textContent = 'Run import'; }
     };
