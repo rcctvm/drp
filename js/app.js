@@ -171,6 +171,8 @@
   function applySession(data) {
     state.role = data.role; state.username = data.username; state.cfg = data.config;
     saveCfg();
+    const st = data.config.settings || {};
+    window.DrpPrefs.setDefaults(st.defaultFont, st.defaultWidth);
   }
   function logout() {
     API.setToken('', false);
@@ -780,7 +782,7 @@
   async function viewSettings() {
     const me = state.cfg.me;
     if (!isAdmin()) {
-      setMain(`<h1>Settings</h1>${accountPanel()}${displayPanel()}`);
+      setMain(`<h1>Settings</h1><div id="display-box">${displayPanel()}</div>${accountPanel()}`);
       wireAccount(); wireDisplay();
       return;
     }
@@ -789,7 +791,8 @@
     const users = await guarded(() => API.call('users'));
     if (!users) return;
     setMain(`<h1>Settings</h1>
-      <details class="sect" open><summary>Import from the legacy sheet<span class="sect-hint">read-only</span></summary><div class="sect-body">
+      <div id="display-box">${displayPanel()}</div>
+      <details class="sect"><summary>Import from the legacy sheet<span class="sect-hint">read-only</span></summary><div class="sect-body">
         <p>Copies the DRP1 2025-26 data from the Google Sheet <b>DRP Manager</b> (DRP1 › 2025-26): students, faculty, syllabus, class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log.
         The legacy sheet is only read, never changed.</p>
         <div class="toolbar"><div class="field" style="min-width:360px"><label for="imp-id">Legacy spreadsheet ID</label><input id="imp-id" value="${esc((d.Settings.find((s) => s.Key === 'LegacySpreadsheetId') || {}).Value || '')}"></div>
@@ -799,7 +802,7 @@
       </div></details>
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
-      ${accountPanel()}${displayPanel()}`);
+      ${accountPanel()}`);
     wireAccount(); wireDisplay();
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
@@ -916,11 +919,45 @@
     };
   }
   function displayPanel() {
-    const f = window.DrpPrefs.getFont();
-    return `<details class="sect"><summary>Display<span class="sect-hint">this device</span></summary><div class="sect-body">
-      <div class="field" style="max-width:260px"><label for="p-font">Font</label><select id="p-font"><option value="default" ${f === 'default' ? 'selected' : ''}>Default</option><option value="courier" ${f === 'courier' ? 'selected' : ''}>Courier New</option></select></div></div></details>`;
+    const P = window.DrpPrefs, f = P.getFont(), w = P.getWidth(), d = P.defaults();
+    const name = { default: 'Default (Segoe UI)', courier: 'Courier New', comfortable: 'Comfortable', full: 'Full width' };
+    const radio = (group, value, cur, label) => `<label class="choice"><input type="radio" name="${group}" value="${value}" ${value === cur ? 'checked' : ''}> ${label}</label>`;
+    return `<details class="sect" open><summary>Display<span class="sect-hint">font and page width</span></summary><div class="sect-body">
+      <h3>Font</h3>
+      <div class="choice-row">${radio('p-font', 'default', f, name.default)}${radio('p-font', 'courier', f, '<span style="font-family:\'Courier New\',Courier,monospace">Courier New</span>')}</div>
+      <div class="font-preview ${f}" id="p-preview">Session 01 · 9:00 AM–10:30 AM · (THE01) Beam Therapy · Raghukumar P. · 1:30 h</div>
+      <h3 style="margin-top:16px">Page width</h3>
+      <div class="choice-row">${radio('p-width', 'comfortable', w, 'Comfortable (centred)')}${radio('p-width', 'full', w, 'Full width (more room for wide tables)')}</div>
+      <p class="note" style="margin-top:12px">Your choice is saved on this device. ${P.hasOwnFont() || P.hasOwnWidth() ? '<a href="#" id="p-reset">Use the app default</a>' : 'You are using the app default'} (${name[d.font]}, ${name[d.width].toLowerCase()}).</p>
+      ${isAdmin() ? `<div class="actions" style="margin-top:6px"><button class="btn" type="button" id="p-default">Make ${name[f]} + ${name[w].toLowerCase()} the default for everyone</button></div>` : ''}
+    </div></details>`;
   }
-  function wireDisplay() { $('#p-font').onchange = (e) => window.DrpPrefs.setFont(e.target.value); }
+  /** Re-draws only the Display panel after a change, without jumping to the top. */
+  function redrawDisplay() {
+    const y = window.scrollY, box = $('#display-box');
+    if (box) { box.innerHTML = displayPanel(); wireDisplay(); }
+    window.scrollTo(0, y);
+  }
+  function wireDisplay() {
+    const P = window.DrpPrefs;
+    $$('input[name=p-font]').forEach((r) => r.addEventListener('change', () => { P.setFont(r.value); redrawDisplay(); }));
+    $$('input[name=p-width]').forEach((r) => r.addEventListener('change', () => { P.setWidth(r.value); redrawDisplay(); }));
+    const reset = $('#p-reset');
+    if (reset) reset.onclick = (e) => { e.preventDefault(); P.setFont('app'); P.setWidth('app'); redrawDisplay(); };
+    const def = $('#p-default');
+    if (def) def.onclick = async () => {
+      def.disabled = true;
+      try {
+        const res = await write('setAppDefaults', { font: P.getFont(), width: P.getWidth() });
+        if (res) {
+          state.cfg.settings.defaultFont = res.defaultFont; state.cfg.settings.defaultWidth = res.defaultWidth; saveCfg();
+          P.setDefaults(res.defaultFont, res.defaultWidth);
+          toast('Saved as the default for everyone. Anyone who picked their own font keeps it.');
+          redrawDisplay();
+        }
+      } catch (e) { /* toast shown */ } finally { def.disabled = false; }
+    };
+  }
 
   // ---------- Help ----------
   function viewHelp() {

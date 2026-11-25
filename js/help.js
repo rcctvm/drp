@@ -30,7 +30,8 @@
       <li><b>Report card</b>: one student's details, attendance by month, exam marks, class tests and assignments.</li>
       <li><b>Reports sent</b> (admin): tick each month once the monthly report has been sent.</li></ul>`],
     ['Faculty (admin)', `<p>Lecture days and hours for every faculty member and activity, by month, with the list of lectures and topics, like the old F1…F20 tabs.</p>`],
-    ['Settings', `<ul><li><b>Import from the legacy sheet</b> (admin): reads the old DRP Manager sheet (never changes it) and copies its data. Safe to run again. Anything entered or edited in DRP Manager is kept.</li>
+    ['Settings', `<ul><li><b>Display</b>: choose the font (Default or Courier New) and the page width (Comfortable, centred; or Full width for wide tables). The choice is kept on this device. Admins can make their choice the default for everyone.</li>
+      <li><b>Import from the legacy sheet</b> (admin): reads the old DRP Manager sheet (never changes it) and copies its data. Safe to run again. Anything entered or edited in DRP Manager is kept.</li>
       <li><b>Users</b> (admin): add admins and student accounts. Each student account is linked to one student.</li>
       <li><b>Students, Faculty, Papers, Topics, Holidays, Application settings</b> (admin): edit the lists. The batch start and end dates in Application settings decide which months are shown.</li>
       <li><b>My account</b>: change your user name or password.</li></ul>`],
