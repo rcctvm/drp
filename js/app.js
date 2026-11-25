@@ -242,8 +242,14 @@
               g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = 'rgba(8,42,49,.95)'; g.strokeText(t, el.x, el.y - 6);
               g.fillStyle = ds.borderColor || '#ffffff'; g.fillText(t, el.x, el.y - 6);
             } else if (opts.inside && Math.abs(el.base - el.y) >= 18) {   // in the middle of a tall bar
+              // Shrink the font until the number fits inside the column's width (7–11 px).
+              const fam = getComputedStyle(document.body).fontFamily, room = (el.width || 30) - 4;
+              let size = 11;
+              g.font = `bold ${size}px ${fam}`;
+              while (size > 7 && g.measureText(t).width > room) { size -= 0.5; g.font = `bold ${size}px ${fam}`; }
               g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = opts.insideColor || '#00262c';
               g.fillText(t, el.x, (el.y + el.base) / 2);
+              g.font = `bold 12px ${fam}`;
             } else {                                // above the bar
               g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillStyle = opts.color || '#ffffff';
               g.fillText(t, el.x, el.y - 3);
