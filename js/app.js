@@ -294,9 +294,17 @@
     const me = state.cfg.me || {};
     $('#role-badge').textContent = isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · student`;
   }
+  /** "updated 25 Nov 2026, 18:42 (dd9313c)" — stamped on every website publish (js/build.js). */
+  function buildLabel() {
+    const b = window.DRP_BUILD || {};
+    if (!b.time) return 'website: development copy';
+    const d = new Date(b.time);
+    const when = isNaN(d) ? b.time : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return `updated ${when} (${b.sha})`;
+  }
   function renderFooter() {
     const r = state.cfg.release || {};
-    $('#app-footer').innerHTML = `${esc(state.cfg.settings.title)} v${esc(r.version || '')} · ${esc(state.cfg.settings.department)}`;
+    $('#app-footer').innerHTML = `${esc(state.cfg.settings.title)} v${esc(r.version || '')} · ${esc(buildLabel())} · ${esc(state.cfg.settings.department)}`;
   }
   function startApp() {
     $('#login-view').hidden = true;

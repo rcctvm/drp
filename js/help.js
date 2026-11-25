@@ -5,7 +5,9 @@
       <p><b>DRP Manager</b> runs the Diploma in Radiological Physics (DRP) course of the Division of Radiation Physics,
       Regional Cancer Centre, Thiruvananthapuram. It replaces the <i>DRP Manager</i> Google Sheet: the class log, attendance,
       syllabus coverage, internal exams, class tests, assignments, the academic calendar and the monthly report.</p>
-      <p>Version <span id="about-version">—</span> · released <span id="about-date">—</span>.</p>`],
+      <p>Server version <span id="about-version">—</span> · released <span id="about-date">—</span>.<br>
+      Website <span id="about-build">—</span>.</p>
+      <p class="note">The server version changes when the Apps Script code changes; the website stamp changes on every website update.</p>`],
     ['Who sees what', `
       <ul>
         <li><b>Admin</b>: sees and edits everything, manages users, students, faculty, syllabus and holidays, and runs the import.</li>
@@ -44,6 +46,8 @@
       <h1>Help &amp; user manual</h1>
       ${SECTIONS.map(([t, h], i) => `<details class="sect" ${i < 2 ? 'open' : ''}><summary>${t}</summary><div class="sect-body">${h}</div></details>`).join('')}
     </div>`;
+    const b = window.DRP_BUILD || {}, bEl = root.querySelector('#about-build');
+    if (bEl) bEl.textContent = b.time ? `updated ${new Date(b.time).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} (${b.sha})` : 'development copy';
     if (info && info.version) {
       root.querySelector('#about-version').textContent = 'v' + info.version;
       const d = new Date(info.date + 'T00:00:00');

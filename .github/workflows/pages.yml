@@ -22,6 +22,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # Stamp this release: js/build.js carries the commit and time (shown in the footer), and every
+      # CSS/JS link gets ?v=<commit> so browsers load the new files without a hard refresh.
+      - name: Stamp build
+        run: |
+          SHA="${GITHUB_SHA::7}"
+          WHEN="$(TZ=Asia/Kolkata date '+%Y-%m-%dT%H:%M')"
+          printf "window.DRP_BUILD = { sha: '%s', time: '%s' };\n" "$SHA" "$WHEN" > js/build.js
+          sed -i -E "s#(src|href)=\"(js|css)/([^\"?]+)\"#\1=\"\2/\3?v=${SHA}\"#g" index.html help.html
+          grep -o 'js/app.js?v=[0-9a-f]*' index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
