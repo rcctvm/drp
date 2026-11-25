@@ -1,0 +1,935 @@
+/* DRP Manager — single-page front end (no build step). Same structure as UNITY. */
+(function () {
+  'use strict';
+
+  const API = window.DrpAPI;
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (n) => (Number(n) || 0).toLocaleString('en-IN');
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const COLORS = ['#00ffff', '#ffff00', '#e5173f', '#3ddc84', '#ff9f40', '#b48cff', '#ff6fd8', '#7fb7ff', '#c0ff6f'];
+  const ATT_CYCLE = ['P', 'A', 'L', ''];
+
+  const state = { role: null, cfg: null, charts: [], seq: 0, program: 'DRP1' };
+  const isAdmin = () => state.role === 'admin';
+
+  // ---------- page cache (stale-while-revalidate), as in UNITY ----------
+  const cache = new Map();
+  const FRESH_MS = 30000;
+  const strip = (k, v) => (k === 'generatedAt' ? undefined : v);
+  API.onVersionChange(() => cache.clear());
+  async function cachedLoad(action, params, rerender) {
+    const key = action + JSON.stringify(params);
+    const hit = cache.get(key);
+    const seq = state.seq;
+    if (hit) {
+      if (Date.now() - hit.at > FRESH_MS) {
+        API.call(action, params).then((data) => {
+          const changed = JSON.stringify(data, strip) !== JSON.stringify(hit.data, strip);
+          cache.set(key, { data, at: Date.now() });
+          if (changed && seq === state.seq) rerender();
+        }).catch(() => {});
+      }
+      return hit.data;
+    }
+    loading();
+    const data = await guarded(() => API.call(action, params));
+    if (data !== undefined) cache.set(key, { data, at: Date.now() });
+    return seq === state.seq ? data : undefined;
+  }
+  async function write(action, params) {
+    const data = await guarded(() => API.call(action, params));
+    cache.clear();
+    return data;
+  }
+  function saveCfg() {
+    try { localStorage.setItem('drp.cfg', JSON.stringify({ role: state.role, username: state.username, cfg: state.cfg })); } catch (e) {}
+  }
+
+  // ---------- helpers ----------
+  function toast(msg, isError) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isError ? ' error' : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { t.className = 'toast'; }, isError ? 6000 : 3000);
+  }
+  function confirmBox(title, text, okLabel = 'OK') {
+    const d = $('#confirm-dialog');
+    $('#confirm-title').textContent = title;
+    $('#confirm-text').textContent = text;
+    $('#confirm-ok').textContent = okLabel;
+    return new Promise((resolve) => {
+      const done = (v) => { d.close(); resolve(v); };
+      $('#confirm-ok').onclick = () => done(true);
+      $('#confirm-cancel').onclick = () => done(false);
+      d.oncancel = () => resolve(false);
+      d.showModal();
+    });
+  }
+  /** Modal form. onSave(form) returns true to close; onDelete optional. */
+  function formDialog({ title, body, okLabel = 'Save', onSave, onDelete, deleteLabel = 'Delete' }) {
+    const d = $('#form-dialog'), f = $('#form-dialog-form');
+    $('#form-dialog-title').textContent = title;
+    $('#form-dialog-body').innerHTML = body;
+    $('#form-dialog-ok').textContent = okLabel;
+    const del = $('#form-dialog-delete');
+    del.hidden = !onDelete; del.textContent = deleteLabel;
+    const busy = (b) => $$('#form-dialog .actions button').forEach((x) => { x.disabled = b; });
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      busy(true);
+      try { if (await onSave(f)) d.close(); } catch (err) { /* toast already shown */ } finally { busy(false); }
+    };
+    del.onclick = async () => {
+      busy(true);
+      try { if (await onDelete()) d.close(); } catch (err) {} finally { busy(false); }
+    };
+    $('#form-dialog-cancel').onclick = () => d.close();
+    d.showModal();
+    return f;
+  }
+  const minToHM = (m) => { m = Math.round(Number(m) || 0); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
+  const parseDs = (s) => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, m - 1, d); };
+  const fmtDate = (s) => { if (!s) return ''; const d = parseDs(s); return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const fmtShort = (s) => { if (!s) return ''; const d = parseDs(s); return isNaN(d) ? s : `${DOW[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`; };
+  const fmtTime = (hm) => {
+    if (!hm) return '';
+    let [h, m] = hm.split(':').map(Number);
+    const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return `${h}:${String(m).padStart(2, '0')} ${ap}`;
+  };
+  const todayDs = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+  const pct = (v) => (v == null ? '—' : `${v}%`);
+  const stars = (n, max = 5) => { n = Math.round(Number(n) || 0); return `<span class="stars" aria-label="${n} of ${max} stars">${'★'.repeat(n)}<span class="off">${'★'.repeat(Math.max(0, max - n))}</span></span>`; };
+
+  /** Batch months [{year, monthNo, key, label}] and the current/nearest one. */
+  const batchMonths = () => state.cfg.months || [];
+  function defaultMonth() {
+    const t = new Date(), key = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
+    const ms = batchMonths();
+    return ms.find((m) => m.key === key) || (ms.length && key > ms[ms.length - 1].key ? ms[ms.length - 1] : ms[0]) || { year: t.getFullYear(), monthNo: t.getMonth() + 1, key };
+  }
+  function monthPicker(id, year, monthNo) {
+    const ms = batchMonths();
+    const key = `${year}-${String(monthNo).padStart(2, '0')}`;
+    const opts = ms.map((m) => `<option value="${m.year}/${m.monthNo}" ${m.key === key ? 'selected' : ''}>${MONTHS[m.monthNo - 1]} ${m.year}</option>`);
+    if (!ms.some((m) => m.key === key)) opts.unshift(`<option selected value="${year}/${monthNo}">${MONTHS[monthNo - 1]} ${year}</option>`);
+    const i = ms.findIndex((m) => m.key === key);
+    return `<div class="field"><label for="${id}">Month</label>
+      <div style="display:flex;gap:6px">
+        <button class="btn small" type="button" data-step="-1" ${i <= 0 ? 'disabled' : ''} aria-label="Previous month">‹</button>
+        <select id="${id}">${opts.join('')}</select>
+        <button class="btn small" type="button" data-step="1" ${i < 0 || i >= ms.length - 1 ? 'disabled' : ''} aria-label="Next month">›</button>
+      </div></div>`;
+  }
+  function wireMonthPicker(id, base) {
+    const sel = $('#' + id);
+    sel.onchange = () => { location.hash = `${base}/${sel.value}`; };
+    $$(`[data-step]`, sel.parentNode).forEach((b) => b.addEventListener('click', () => {
+      const i = sel.selectedIndex + Number(b.dataset.step);
+      if (i >= 0 && i < sel.options.length) { sel.selectedIndex = i; sel.onchange(); }
+    }));
+  }
+  const topicLabel = (code) => { const t = state.cfg.topics.find((x) => x.code === code); return t ? `(${t.code}) ${t.name}` : code; };
+  const topicOptions = (sel) => {
+    const byPaper = {};
+    state.cfg.topics.forEach((t) => { (byPaper[t.paper || 'Other'] = byPaper[t.paper || 'Other'] || []).push(t); });
+    const paperTitle = (c) => { const p = state.cfg.papers.find((x) => x.code === c); return p ? `${p.code} — ${p.short || p.title}` : c; };
+    return '<option value="">— none —</option>' + Object.keys(byPaper).map((p) => `<optgroup label="${esc(paperTitle(p))}">${
+      byPaper[p].map((t) => `<option value="${esc(t.code)}" ${t.code === sel ? 'selected' : ''}>(${esc(t.code)}) ${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
+  };
+  const students = () => state.cfg.students[state.program] || [];
+
+  function destroyCharts() { state.charts.forEach((c) => c.destroy()); state.charts = []; }
+  function chart(canvas, config) {
+    if (!window.Chart || !canvas) return;
+    Chart.defaults.color = '#a9c7cd';
+    Chart.defaults.borderColor = 'rgba(31,107,122,.5)';
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+    state.charts.push(new Chart(canvas, config));
+  }
+  function setMain(html) { destroyCharts(); $('#main').innerHTML = html; }
+  function loading() { setMain('<div class="loading">Loading…</div>'); }
+  async function guarded(fn) {
+    try { return await fn(); } catch (e) {
+      if (e.auth) { logout(); toast(e.message, true); return; }
+      toast(e.message, true);
+      throw e;
+    }
+  }
+
+  // ---------- auth ----------
+  async function login(username, password, remember) {
+    const data = await API.call('login', { username, password, remember });
+    API.setToken(data.token, remember);
+    applySession(data);
+    startApp();
+  }
+  function applySession(data) {
+    state.role = data.role; state.username = data.username; state.cfg = data.config;
+    saveCfg();
+  }
+  function logout() {
+    API.setToken('', false);
+    cache.clear();
+    try { localStorage.removeItem('drp.cfg'); } catch (e) {}
+    state.role = null; state.username = '';
+    $('#login-key').value = '';
+    history.replaceState(null, '', '#/dashboard');
+    showLogin();
+  }
+  $('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#login-btn'), err = $('#login-error');
+    btn.disabled = true; btn.textContent = 'Signing in…'; err.hidden = true;
+    try { await login($('#login-user').value.trim(), $('#login-key').value, $('#login-remember').checked); $('#login-key').value = ''; }
+    catch (ex) { err.textContent = ex.message; err.hidden = false; }
+    finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+  });
+  $('#logout-btn').addEventListener('click', logout);
+
+  function showLogin() {
+    $('#app-view').hidden = true;
+    $('#login-view').hidden = false;
+    setTimeout(() => $('#login-user').focus(), 0);
+  }
+  function renderBadge() {
+    const me = state.cfg.me || {};
+    $('#role-badge').textContent = isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · student`;
+  }
+  function renderFooter() {
+    const r = state.cfg.release || {};
+    $('#app-footer').innerHTML = `${esc(state.cfg.settings.title)} v${esc(r.version || '')} · ${esc(state.cfg.settings.department)} · <a href="help.html">Help</a>`;
+  }
+  function startApp() {
+    $('#login-view').hidden = true;
+    $('#app-view').hidden = false;
+    document.body.classList.toggle('is-admin', isAdmin());
+    renderBadge();
+    if (state.cfg.settings.department) $('#dept-line').textContent = state.cfg.settings.department;
+    renderFooter();
+    route();
+  }
+  async function refreshConfig() {
+    const data = await guarded(() => API.call('bootstrap'));
+    if (data) { state.cfg = data; saveCfg(); }
+  }
+
+  // ---------- router ----------
+  const VIEWS = {
+    dashboard: viewDashboard, log: viewLog, attendance: viewAttendance, syllabus: viewSyllabus, exams: viewExams,
+    tests: (...a) => viewTasks('ClassTest', ...a), assignments: (...a) => viewTasks('Assignment', ...a),
+    calendar: viewCalendar, reports: viewReports, faculty: viewFaculty, settings: viewSettings, help: viewHelp
+  };
+  function route() {
+    if (!state.role) return;
+    const [, name = 'dashboard', ...args] = (location.hash || '#/dashboard').split('/');
+    const view = VIEWS[name] || viewDashboard;
+    if (name === 'faculty' && !isAdmin()) { location.replace('#/dashboard'); return; }
+    state.seq++;
+    $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
+    Promise.resolve(view(...args.map(decodeURIComponent))).catch(() => {});
+  }
+  window.addEventListener('hashchange', route);
+
+  // ---------- Dashboard ----------
+  async function viewDashboard() {
+    const d = await cachedLoad('dashboard', { program: state.program }, viewDashboard);
+    if (!d) return;
+    const s = state.cfg.settings, me = state.cfg.me;
+    const att = d.attendance;
+    const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + (x.pct || 0), 0) / att.filter((x) => x.pct != null).length || 0) / 10 : null;
+    const papers = state.cfg.papers.filter((p) => p.program === state.program);
+    const paperRows = papers.map((p) => ({ label: p.short || p.code, minutes: d.paperMinutes[p.code] || 0 }));
+    if (d.paperMinutes.Other) paperRows.push({ label: 'Other', minutes: d.paperMinutes.Other });
+    if (d.paperMinutes.Unassigned) paperRows.push({ label: 'No topic', minutes: d.paperMinutes.Unassigned });
+    setMain(`
+      <div class="toolbar">
+        <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}${s.batch ? ` · Batch ${esc(s.batch)}` : ''}</div></div>
+      </div>
+      <div class="grid kpis">
+        <div class="kpi"><div class="label">Class days</div><div class="value">${fmt(d.totals.days)}</div><div class="hint">${fmtDate(s.batchStart)} – ${fmtDate(s.batchEnd)}</div></div>
+        <div class="kpi"><div class="label">Teaching hours</div><div class="value">${minToHM(d.totals.minutes)}</div><div class="hint">hours:minutes · target ${fmt(d.targets.theory)} theory</div></div>
+        <div class="kpi"><div class="label">Sessions logged</div><div class="value">${fmt(d.totals.sessions)}</div></div>
+        <div class="kpi"><div class="label">Syllabus topics taught</div><div class="value">${fmt(d.topicsCovered)}<small style="font-size:16px;color:var(--muted)"> / ${fmt(d.topicsTotal)}</small></div></div>
+        <div class="kpi"><div class="label">${isAdmin() ? 'Average attendance' : 'My attendance'}</div><div class="value">${pct(isAdmin() ? avg : (att[0] ? att[0].pct : null))}</div>
+          <div class="hint">${isAdmin() ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
+      </div>
+      ${isAdmin() && d.reportsPending.length ? `<div class="warn-box">Monthly reports not yet marked as sent: <b>${d.reportsPending.map(esc).join(', ')}</b>. <a href="#/reports">Open reports</a></div>` : ''}
+      <div class="grid two" style="margin-top:16px">
+        <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
+        <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div></div>
+        <div class="panel"><h2>Attendance</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Student</th><th class="num">Present</th><th class="num">Absent</th><th class="num">Leave</th><th class="num">Days</th><th class="num">%</th></tr></thead>
+            <tbody>${att.map((a) => `<tr><td class="tech">${esc(a.name)}</td><td class="num">${a.P}</td><td class="num">${a.A}</td><td class="num">${a.L}</td><td class="num">${a.total}</td><td class="num grand">${pct(a.pct)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No students yet.</td></tr>'}</tbody>
+          </table></div>
+        </div>
+        <div class="panel"><h2>Recent classes</h2>
+          <div class="table-wrap"><table class="fit">
+            <thead><tr><th style="width:110px">Date</th><th>Topic</th><th>Faculty / activity</th><th class="num" style="width:60px">Hrs</th></tr></thead>
+            <tbody>${d.recent.map((r) => `<tr><td>${fmtShort(r.date)}</td><td class="wrap">${esc(r.topicCode ? `(${r.topicCode}) ${r.topic}` : r.topic)}</td><td class="wrap">${esc(r.faculty.map((f) => f.name).join(', '))}</td><td class="num">${minToHM(r.minutes)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No classes logged yet.</td></tr>'}</tbody>
+          </table></div>
+          ${d.upcomingHolidays.length ? `<p class="note" style="margin-top:10px">Upcoming holidays: ${d.upcomingHolidays.map((h) => `${esc(h.name)} (${fmtDate(h.date)})`).join(' · ')}</p>` : ''}
+        </div>
+      </div>`);
+    const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
+    chart($('#c-hours'), {
+      type: 'bar',
+      data: { labels: d.months.map((m) => m.label), datasets: [
+        { label: 'Hours', data: d.months.map((m, i) => (has[i] ? Math.round(m.minutes / 6) / 10 : null)), backgroundColor: '#00ffff', borderRadius: 3, yAxisID: 'y' },
+        { label: 'Class days', type: 'line', data: d.months.map((m, i) => (has[i] ? m.days : null)), borderColor: '#ffff00', backgroundColor: '#ffff00', tension: .3, pointRadius: 3, yAxisID: 'y1' }
+      ] },
+      options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'hours' } }, y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'days' } } },
+        plugins: { legend: { position: 'bottom' } } }
+    });
+    chart($('#c-papers'), {
+      type: 'bar',
+      data: { labels: paperRows.map((p) => p.label), datasets: [{ label: 'Hours', data: paperRows.map((p) => Math.round(p.minutes / 6) / 10), backgroundColor: paperRows.map((_, i) => COLORS[i % COLORS.length]), borderRadius: 3 }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, scales: { x: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+    });
+  }
+
+  // ---------- Class log ----------
+  async function viewLog(year, monthNo) {
+    const dm = defaultMonth();
+    year = Number(year) || dm.year; monthNo = Number(monthNo) || dm.monthNo;
+    const d = await cachedLoad('sessions', { program: state.program, year, month: monthNo }, () => viewLog(year, monthNo));
+    if (!d) return;
+    const bySlot = {};
+    d.sessions.forEach((s) => { bySlot[s.date + '|' + s.slot] = s; });
+    const slots = state.cfg.slots || 5;
+    const usedSlots = Math.max(2, ...d.sessions.map((s) => s.slot), isAdmin() ? 3 : 1);
+    const showSlots = state.showAllSlots ? slots : Math.min(slots, usedSlots);
+    const today = todayDs();
+    const cell = (day, k) => {
+      const s = bySlot[day.date + '|' + k];
+      const cls = ['ses', isAdmin() ? 'editable' : '', day.holiday ? 'hol' : (day.dow === 0 ? 'off' : '')].join(' ');
+      if (!s) return `<td class="${cls}" data-date="${day.date}" data-slot="${k}">${isAdmin() ? '<span class="empty-slot">+</span>' : ''}</td>`;
+      return `<td class="${cls}" data-date="${day.date}" data-slot="${k}" data-id="${esc(s.id)}">
+        ${s.start || s.end ? `<div class="t">${fmtTime(s.start)}–${fmtTime(s.end)}${s.minutes ? ` · ${minToHM(s.minutes)}` : ''}</div>` : ''}
+        <div class="tp">${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
+        ${s.faculty.length ? `<div class="fc">${esc(s.faculty.map((f) => f.name).join(', '))}</div>` : ''}
+        ${s.remarks ? `<div class="note">${esc(s.remarks)}</div>` : ''}</td>`;
+    };
+    setMain(`
+      <div class="toolbar">
+        <div><h1>Class log</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year}: <b>${d.totals.days}</b> class days, <b>${minToHM(d.totals.minutes)}</b> hours${isAdmin() ? ' · click a cell to add or edit a session' : ''}</div></div>
+        <div style="flex:1"></div>
+        ${monthPicker('log-month', d.year, d.monthNo)}
+        <button class="btn" type="button" onclick="window.print()">Print</button>
+      </div>
+      <div class="table-wrap"><table class="log-grid">
+        <thead><tr><th style="width:90px">Date</th>${Array.from({ length: showSlots }, (_, i) => `<th>Session ${String(i + 1).padStart(2, '0')}</th>`).join('')}</tr></thead>
+        <tbody>${d.days.map((day) => `<tr>
+          <td class="date ${day.holiday ? 'hol' : (day.dow === 0 ? 'off' : '')} ${day.date === today ? 'today' : ''}">${fmtShort(day.date)}${day.holiday ? `<div class="note">${esc(day.holiday.name)}</div>` : ''}</td>
+          ${Array.from({ length: showSlots }, (_, i) => cell(day, i + 1)).join('')}</tr>`).join('')}
+          <tr class="total"><td>Total</td><td colspan="${showSlots}">${d.totals.days} days · ${minToHM(d.totals.minutes)} hours · ${d.totals.sessions} sessions</td></tr>
+        </tbody>
+      </table></div>
+      ${isAdmin() && showSlots < slots ? `<p class="note">Showing ${showSlots} of ${slots} sessions per day. <a href="#" id="log-more">Show all ${slots}</a></p>` : ''}`);
+    wireMonthPicker('log-month', '#/log');
+    if (!isAdmin()) return;
+    const more = $('#log-more');
+    if (more) more.onclick = (e) => { e.preventDefault(); state.showAllSlots = true; viewLog(year, monthNo); };
+    $$('.log-grid td.ses.editable').forEach((td) => td.addEventListener('click', () => {
+      const s = td.dataset.id ? d.sessions.find((x) => x.id === td.dataset.id) : null;
+      editSession(s || { date: td.dataset.date, slot: Number(td.dataset.slot) }, () => viewLog(year, monthNo));
+    }));
+  }
+
+  function editSession(s, done) {
+    const fac = state.cfg.faculty;
+    const chosen = new Set((s.faculty || []).map((f) => f.abbr));
+    const body = `
+      <p class="note">${fmtDate(s.date)} · Session ${String(s.slot).padStart(2, '0')}</p>
+      <div class="form-grid">
+        <div class="field"><label for="s-start">Start time</label><input id="s-start" name="start" type="time" step="300" value="${esc(s.start || '')}"></div>
+        <div class="field"><label for="s-end">End time</label><input id="s-end" name="end" type="time" step="300" value="${esc(s.end || '')}"></div>
+        <div class="field"><label for="s-slot">Session</label><select id="s-slot" name="slot">${Array.from({ length: state.cfg.slots }, (_, i) => `<option ${i + 1 === s.slot ? 'selected' : ''} value="${i + 1}">${String(i + 1).padStart(2, '0')}</option>`).join('')}</select></div>
+        <div class="field"><label for="s-date">Date</label><input id="s-date" name="date" type="date" value="${esc(s.date)}"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="s-topic">Topic</label><select id="s-topic" name="topicCode">${topicOptions(s.topicCode || '')}</select></div>
+      <div class="field" style="margin-top:12px"><label>Faculty / activity (choose one or more)</label>
+        <div class="check-list">${fac.map((f) => `<label><input type="checkbox" name="fac" value="${esc(f.abbr)}" ${chosen.has(f.abbr) ? 'checked' : ''}> (${esc(f.abbr)}) ${esc(f.name)}</label>`).join('')}</div></div>
+      <div class="field" style="margin-top:12px"><label for="s-remarks">Remarks (optional)</label><input id="s-remarks" name="remarks" maxlength="500" value="${esc(s.remarks || '')}"></div>`;
+    formDialog({
+      title: s.id ? 'Edit session' : 'Add session', body,
+      onSave: async (f) => {
+        const session = {
+          id: s.id, program: state.program, date: f.date.value, slot: Number(f.slot.value), start: f.start.value, end: f.end.value,
+          topicCode: f.topicCode.value, topic: s.topicCode ? '' : (s.topic || ''), faculty: $$('input[name=fac]:checked', f).map((x) => x.value), remarks: f.remarks.value
+        };
+        const res = await write('saveSession', { session });
+        if (res) { toast('Session saved.'); done(); return true; }
+      },
+      onDelete: s.id ? async () => {
+        if (!(await confirmBox('Delete session', `Delete session ${s.slot} on ${fmtDate(s.date)}?`, 'Delete'))) return false;
+        await write('deleteSession', { id: s.id });
+        toast('Session deleted.'); done(); return true;
+      } : null
+    });
+  }
+
+  // ---------- Attendance ----------
+  async function viewAttendance(year, monthNo) {
+    const dm = defaultMonth();
+    year = Number(year) || dm.year; monthNo = Number(monthNo) || dm.monthNo;
+    const d = await cachedLoad('attendance', { program: state.program, year, month: monthNo }, () => viewAttendance(year, monthNo));
+    if (!d) return;
+    const pending = new Map();   // "date|studentId" -> status
+    const today = todayDs();
+    setMain(`
+      <div class="toolbar">
+        <div><h1>Attendance</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year} · P present, A absent, L leave${isAdmin() ? ' · click a cell to change it, then Save' : ''}</div></div>
+        <div style="flex:1"></div>
+        ${monthPicker('att-month', d.year, d.monthNo)}
+        ${isAdmin() ? `<button class="btn" type="button" id="att-fill">Mark class days present</button>
+          <button class="btn primary" type="button" id="att-save" disabled>Save</button>` : ''}
+        <button class="btn" type="button" onclick="window.print()">Print</button>
+      </div>
+      <div class="table-wrap"><table class="att-grid">
+        <thead><tr><th>Student</th>${d.days.map((x) => `<th class="day ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')}" title="${esc(x.holiday ? x.holiday.name : '')}">${parseDs(x.date).getDate()}<br>${DOW[x.dow].slice(0, 2)}</th>`).join('')}
+          <th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num">Month %</th><th class="num">Overall %</th></tr></thead>
+        <tbody>${d.students.map((s) => `<tr data-sid="${esc(s.id)}"><td class="tech">${esc(s.name)}</td>
+          ${d.days.map((x) => { const v = s.marks[x.date] || ''; return `<td class="mark m-${v} ${isAdmin() ? 'editable' : ''} ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')} ${x.date === today ? 'today' : ''}" data-date="${x.date}" title="${fmtDate(x.date)}${x.classDay ? ' · class day' : ''}">${v}</td>`; }).join('')}
+          <td class="num">${s.month.P}</td><td class="num">${s.month.A}</td><td class="num">${s.month.L}</td><td class="num">${pct(s.month.pct)}</td><td class="num grand">${pct(s.overall.pct)}</td></tr>`).join('') || `<tr><td colspan="${d.days.length + 6}" class="empty">No students.</td></tr>`}
+        </tbody>
+      </table></div>
+      <p class="note">Shaded columns: Sundays and RCC holidays. Days with a logged class are marked “class day” in the tooltip.</p>`);
+    wireMonthPicker('att-month', '#/attendance');
+    if (!isAdmin()) return;
+    const saveBtn = $('#att-save');
+    const setCell = (td, v) => {
+      const sid = td.parentNode.dataset.sid, key = td.dataset.date + '|' + sid;
+      const orig = (d.students.find((s) => s.id === sid).marks[td.dataset.date]) || '';
+      td.textContent = v; td.className = td.className.replace(/\bm-\w*\b/, '') + ` m-${v}`;
+      if (v === orig) { pending.delete(key); td.classList.remove('changed'); } else { pending.set(key, v); td.classList.add('changed'); }
+      saveBtn.disabled = !pending.size; saveBtn.textContent = pending.size ? `Save (${pending.size})` : 'Save';
+    };
+    $$('.att-grid td.mark.editable').forEach((td) => td.addEventListener('click', () => {
+      const cur = td.textContent.trim();
+      setCell(td, ATT_CYCLE[(ATT_CYCLE.indexOf(cur) + 1) % ATT_CYCLE.length]);
+    }));
+    $('#att-fill').onclick = () => {
+      const classDays = new Set(d.days.filter((x) => x.classDay).map((x) => x.date));
+      if (!classDays.size) return toast('No classes are logged this month yet.', true);
+      $$('.att-grid td.mark.editable').forEach((td) => { if (classDays.has(td.dataset.date) && !td.textContent.trim()) setCell(td, 'P'); });
+    };
+    saveBtn.onclick = async () => {
+      const changes = [...pending].map(([k, status]) => { const [date, studentId] = k.split('|'); return { date, studentId, status }; });
+      saveBtn.disabled = true;
+      try {
+        const res = await write('saveAttendance', { program: state.program, changes });
+        if (res) { toast(`Saved ${res.saved} change(s).`); viewAttendance(year, monthNo); }
+      } catch (e) { saveBtn.disabled = false; }
+    };
+  }
+
+  // ---------- Syllabus ----------
+  async function viewSyllabus(filter) {
+    const d = await cachedLoad('syllabus', { program: state.program }, () => viewSyllabus(filter));
+    if (!d) return;
+    const q = String(filter || '').toLowerCase();
+    const groups = d.papers.map((p) => ({ p, topics: d.topics.filter((t) => t.paper === p.code) }));
+    const other = d.topics.filter((t) => !d.papers.some((p) => p.code === t.paper) && t.minutes);
+    if (other.length) groups.push({ p: { code: 'Other', title: 'Other activities', short: 'OTHER' }, topics: other });
+    const match = (t) => !q || (t.code + ' ' + t.name + ' ' + t.lines.join(' ')).toLowerCase().includes(q);
+    const total = d.topics.reduce((a, t) => a + t.minutes, 0);
+    setMain(`
+      <div class="toolbar">
+        <div><h1>Syllabus</h1><div class="sub">${esc(state.program)} · ${d.topics.filter((t) => t.minutes && d.papers.some((p) => p.code === t.paper)).length} of ${d.topics.filter((t) => d.papers.some((p) => p.code === t.paper)).length} topics taught · ${minToHM(total)} hours logged · course hours: theory ${fmt(d.hours.theory)}, practical ${fmt(d.hours.practical)}, project ${fmt(d.hours.project)}</div></div>
+        <div style="flex:1"></div>
+        <div class="field" style="min-width:260px"><label for="syl-q">Search topics</label><input id="syl-q" type="search" value="${esc(filter || '')}" placeholder="e.g. IMRT, dosimetry, TRS 398"></div>
+      </div>
+      ${groups.map(({ p, topics }) => {
+        const shown = topics.filter(match);
+        if (q && !shown.length) return '';
+        const mins = topics.reduce((a, t) => a + t.minutes, 0);
+        return `<details class="sect" ${q ? 'open' : ''}><summary>${esc(p.code)} — ${esc(p.title)}<span class="sect-hint">${topics.filter((t) => t.minutes).length}/${topics.length} topics · ${minToHM(mins)} h</span></summary>
+          <div class="sect-body">${shown.map((t) => {
+            const maxMin = Math.max(...topics.map((x) => x.minutes), 1);
+            return `<details class="topic" ${q && t.lines.some((l) => l.toLowerCase().includes(q)) ? 'open' : ''}><summary>
+              <span class="tag code">${esc(t.code)}</span><b>${esc(t.name)}</b>
+              <span class="bar" title="${minToHM(t.minutes)} h"><div style="width:${Math.round(100 * t.minutes / maxMin)}%"></div></span>
+              <span class="note">${t.sessions ? `${t.sessions} session${t.sessions === 1 ? '' : 's'} · ${minToHM(t.minutes)} h · last ${fmtDate(t.last)}` : 'not taught yet'}</span></summary>
+              ${t.lines.length ? `<ul>${t.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
+              ${t.faculty.length ? `<p class="note" style="margin:4px 0 0 22px">Taught by: ${esc(t.faculty.map((a) => (state.cfg.faculty.find((f) => f.abbr === a) || { name: a }).name).join(', '))}</p>` : ''}
+            </details>`;
+          }).join('') || '<p class="note">No topics.</p>'}</div></details>`;
+      }).join('') || '<div class="empty">No syllabus yet. An admin can import it in Settings › Import.</div>'}`);
+    const inp = $('#syl-q');
+    let t; inp.oninput = () => { clearTimeout(t); t = setTimeout(() => { history.replaceState(null, '', '#/syllabus/' + encodeURIComponent(inp.value)); viewSyllabus(inp.value).then(() => { const i = $('#syl-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 250); };
+  }
+
+  // ---------- Exams ----------
+  async function viewExams() {
+    const d = await cachedLoad('exams', { program: state.program }, viewExams);
+    if (!d) return;
+    const series = [...new Set(d.exams.map((e) => e.series))];
+    const scoreCell = (e, sid) => {
+      const s = e.scores[sid];
+      return s && s.score !== '' ? `<td class="num">${fmt(s.score)}<span class="note"> (${Math.round(100 * s.score / (e.maxMarks || 100))}%)</span></td>` : '<td class="num zero">—</td>';
+    };
+    setMain(`
+      <div class="toolbar">
+        <div><h1>Internal exams</h1><div class="sub">${esc(state.program)} · ${d.exams.length} paper sitting(s)${isAdmin() ? ' · click a row to enter marks' : ''}</div></div>
+        <div style="flex:1"></div>
+        ${isAdmin() ? '<button class="btn primary" type="button" id="ex-add">Add exam paper</button>' : ''}
+      </div>
+      ${series.map((sr) => {
+        const rows = d.exams.filter((e) => e.series === sr);
+        return `<div class="panel print-block"><h2>${esc(sr)}</h2><div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Paper</th><th>Title</th><th class="num">Max</th>${d.students.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}${isAdmin() ? '<th></th>' : ''}</tr></thead>
+          <tbody>${rows.map((e) => `<tr class="${isAdmin() ? 'clickable' : ''}" data-id="${esc(e.id)}"><td>${fmtDate(e.date)}</td><td>${esc(e.paper)}</td><td class="wrap">${esc(e.title)}</td><td class="num">${e.maxMarks}</td>
+            ${d.students.map((s) => scoreCell(e, s.id)).join('')}${isAdmin() ? '<td><button class="btn small" type="button" data-edit>Edit</button></td>' : ''}</tr>`).join('')}
+            <tr class="total"><td colspan="3">Total</td><td class="num">${rows.reduce((a, e) => a + e.maxMarks, 0)}</td>${d.students.map((s) => {
+              const got = rows.filter((e) => e.scores[s.id] && e.scores[s.id].score !== '');
+              const sum = got.reduce((a, e) => a + Number(e.scores[s.id].score), 0), max = got.reduce((a, e) => a + e.maxMarks, 0);
+              return `<td class="num">${got.length ? `${fmt(sum)} (${Math.round(100 * sum / max)}%)` : '—'}</td>`;
+            }).join('')}${isAdmin() ? '<td></td>' : ''}</tr></tbody></table></div></div>`;
+      }).join('') || '<div class="empty">No exams scheduled yet.</div>'}`);
+    if (!isAdmin()) return;
+    $('#ex-add').onclick = () => editExam({ series: series[series.length - 1] || 'Internal 1', maxMarks: 100 });
+    $$('tr.clickable').forEach((tr) => tr.addEventListener('click', (ev) => {
+      const e = d.exams.find((x) => x.id === tr.dataset.id);
+      if (ev.target.closest('[data-edit]')) editExam(e); else editScores('Exam', e, d.students, e.maxMarks, viewExams);
+    }));
+  }
+  function editExam(e) {
+    const papers = state.cfg.papers.filter((p) => p.program === state.program);
+    formDialog({
+      title: e.id ? 'Edit exam paper' : 'Add exam paper',
+      body: `<div class="form-grid">
+        <div class="field"><label for="x-series">Exam</label><input id="x-series" name="series" value="${esc(e.series || '')}" placeholder="Internal 1" required></div>
+        <div class="field"><label for="x-date">Date</label><input id="x-date" name="date" type="date" value="${esc(e.date || '')}"></div>
+        <div class="field"><label for="x-paper">Paper</label><select id="x-paper" name="paper"><option value="">—</option>${papers.map((p) => `<option ${p.code === e.paper ? 'selected' : ''} value="${esc(p.code)}">${esc(p.code)} — ${esc(p.title)}</option>`).join('')}</select></div>
+        <div class="field"><label for="x-max">Maximum marks</label><input id="x-max" name="maxMarks" type="number" min="1" value="${esc(e.maxMarks || 100)}"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="x-title">Title (defaults to the paper title)</label><input id="x-title" name="title" value="${esc(e.title || '')}"></div>`,
+      onSave: async (f) => {
+        const res = await write('saveExam', { exam: { id: e.id, program: state.program, series: f.series.value, date: f.date.value, paper: f.paper.value, title: f.title.value, maxMarks: Number(f.maxMarks.value) } });
+        if (res) { toast('Exam saved.'); viewExams(); return true; }
+      },
+      onDelete: e.id ? async () => {
+        if (!(await confirmBox('Delete exam paper', `Delete ${e.series} · ${e.paper} and all its marks?`, 'Delete'))) return false;
+        await write('deleteExam', { id: e.id }); toast('Deleted.'); viewExams(); return true;
+      } : null
+    });
+  }
+  function editScores(refType, ref, studs, max, done, asStars) {
+    formDialog({
+      title: asStars ? 'Star rating' : 'Enter marks',
+      body: `<p class="note">${esc(ref.series ? `${ref.series} · ${ref.paper} ${ref.title}` : ref.title)}${asStars ? '' : ` · out of ${max}`}</p>
+        <div class="table-wrap"><table class="edit"><thead><tr><th>Student</th><th>${asStars ? 'Stars (1–5)' : 'Marks'}</th><th>Remarks</th></tr></thead><tbody>
+        ${studs.map((s) => { const v = ref.scores[s.id] || {}; return `<tr><td class="tech">${esc(s.name)}</td>
+          <td><input name="score-${esc(s.id)}" type="number" min="0" max="${max}" step="${asStars ? 1 : 0.5}" value="${esc(v.score ?? '')}" aria-label="${asStars ? 'Stars' : 'Marks'} for ${esc(s.name)}"></td>
+          <td><input name="rem-${esc(s.id)}" maxlength="300" value="${esc(v.remarks || '')}" aria-label="Remarks for ${esc(s.name)}"></td></tr>`; }).join('')}
+        </tbody></table></div><p class="note">Leave a box empty to clear that mark.</p>`,
+      onSave: async (f) => {
+        const scores = {};
+        studs.forEach((s) => { scores[s.id] = { score: f['score-' + s.id].value, remarks: f['rem-' + s.id].value }; });
+        const res = await write('saveScores', { refType, refId: ref.id, scores });
+        if (res) { toast('Saved.'); done(); return true; }
+      }
+    });
+  }
+
+  // ---------- Class tests & assignments ----------
+  async function viewTasks(kind) {
+    const isAsg = kind === 'Assignment';
+    const rerender = () => viewTasks(kind);
+    const d = await cachedLoad('tasks', { program: state.program, kind }, rerender);
+    if (!d) return;
+    setMain(`
+      <div class="toolbar">
+        <div><h1>${isAsg ? 'Assignments' : 'Class tests'}</h1><div class="sub">${esc(state.program)} · ${d.tasks.length} item(s)${isAsg ? ' · rated 1–5 stars' : ''}${isAdmin() ? ` · click a row to enter ${isAsg ? 'ratings' : 'marks'}` : ''}</div></div>
+        <div style="flex:1"></div>
+        ${isAdmin() ? `<button class="btn primary" type="button" id="t-add">Add ${isAsg ? 'assignment' : 'class test'}</button>` : ''}
+      </div>
+      <div class="table-wrap"><table class="fit">
+        <thead><tr><th style="width:50px">#</th><th style="width:100px">Date</th>${isAsg ? '<th style="width:100px">Due</th>' : ''}<th style="width:180px">Subject</th><th>Topic / question</th>${isAsg ? '' : '<th class="num" style="width:50px">Max</th>'}
+          ${d.students.map((s) => `<th class="num" style="width:${isAsg ? 110 : 80}px">${esc(s.name)}</th>`).join('')}${isAdmin() ? '<th style="width:60px"></th>' : ''}</tr></thead>
+        <tbody>${d.tasks.map((t) => `<tr class="${isAdmin() ? 'clickable' : ''}" data-id="${esc(t.id)}"><td>${esc(t.no)}</td><td>${fmtDate(t.date)}</td>${isAsg ? `<td>${fmtDate(t.dueDate)}</td>` : ''}
+          <td class="wrap">${esc(t.topicCode ? `(${t.topicCode}) ${t.topic}` : '')}</td><td class="wrap">${esc(t.title)}${t.details ? `<div class="note" style="white-space:pre-line">${esc(t.details)}</div>` : ''}</td>${isAsg ? '' : `<td class="num">${t.maxMarks}</td>`}
+          ${d.students.map((s) => { const v = t.scores[s.id]; return `<td class="num">${v && v.score !== '' ? (isAsg ? stars(v.score) : fmt(v.score)) : '<span class="zero">—</span>'}</td>`; }).join('')}
+          ${isAdmin() ? '<td><button class="btn small" type="button" data-edit>Edit</button></td>' : ''}</tr>`).join('') || `<tr><td colspan="${7 + d.students.length}" class="empty">Nothing yet.</td></tr>`}</tbody>
+      </table></div>`);
+    if (!isAdmin()) return;
+    $('#t-add').onclick = () => editTask({ kind, date: todayDs(), maxMarks: isAsg ? 5 : 10 }, rerender);
+    $$('tr.clickable').forEach((tr) => tr.addEventListener('click', (ev) => {
+      const t = d.tasks.find((x) => x.id === tr.dataset.id);
+      if (ev.target.closest('[data-edit]')) editTask(t, rerender); else editScores('Task', t, d.students, t.maxMarks, rerender, isAsg);
+    }));
+  }
+  function editTask(t, done) {
+    const isAsg = t.kind === 'Assignment';
+    formDialog({
+      title: (t.id ? 'Edit ' : 'Add ') + (isAsg ? 'assignment' : 'class test'),
+      body: `<div class="form-grid">
+        <div class="field"><label for="k-no">No.</label><input id="k-no" name="no" value="${esc(t.no || '')}" placeholder="e.g. 3-1"></div>
+        <div class="field"><label for="k-date">Date given</label><input id="k-date" name="date" type="date" value="${esc(t.date || '')}"></div>
+        ${isAsg ? `<div class="field"><label for="k-due">Due date</label><input id="k-due" name="dueDate" type="date" value="${esc(t.dueDate || '')}"></div>`
+          : `<div class="field"><label for="k-max">Maximum marks</label><input id="k-max" name="maxMarks" type="number" min="1" value="${esc(t.maxMarks || 10)}"></div>`}
+      </div>
+      <div class="field" style="margin-top:12px"><label for="k-topic">Subject (syllabus topic)</label><select id="k-topic" name="topicCode">${topicOptions(t.topicCode || '')}</select></div>
+      <div class="field" style="margin-top:12px"><label for="k-title">Topic / question</label><textarea id="k-title" name="title" rows="2" required>${esc(t.title || '')}</textarea></div>
+      <div class="field" style="margin-top:12px"><label for="k-details">Details (optional)</label><textarea id="k-details" name="details" rows="3">${esc(t.details || '')}</textarea></div>`,
+      onSave: async (f) => {
+        const task = { id: t.id, program: state.program, kind: t.kind, no: f.no.value, date: f.date.value, dueDate: isAsg ? f.dueDate.value : '',
+          maxMarks: isAsg ? 5 : Number(f.maxMarks.value), topicCode: f.topicCode.value, title: f.title.value, details: f.details.value };
+        const res = await write('saveTask', { task });
+        if (res) { toast('Saved.'); done(); return true; }
+      },
+      onDelete: t.id ? async () => {
+        if (!(await confirmBox('Delete', 'Delete this item and all its marks?', 'Delete'))) return false;
+        await write('deleteTask', { id: t.id }); toast('Deleted.'); done(); return true;
+      } : null
+    });
+  }
+
+  // ---------- Calendar ----------
+  async function viewCalendar() {
+    const d = await cachedLoad('calendar', {}, viewCalendar);
+    if (!d) return;
+    const hol = {}; d.holidays.forEach((h) => { hol[h.date] = h; });
+    const ev = {}; d.events.filter((e) => e.program === state.program).forEach((e) => { (ev[e.date] = ev[e.date] || []).push(e); });
+    const today = todayDs();
+    const monthCal = (m) => {
+      const first = new Date(m.year, m.monthNo - 1, 1), days = new Date(m.year, m.monthNo, 0).getDate();
+      const cells = []; for (let i = 0; i < first.getDay(); i++) cells.push('<td></td>');
+      for (let dd = 1; dd <= days; dd++) {
+        const k = `${m.key}-${String(dd).padStart(2, '0')}`, c = d.classDays[k], h = hol[k], e = ev[k];
+        const cls = [h ? 'hol' : '', c && c.programs.includes(state.program) ? 'cls' : '', e ? 'ev' : '', k === today ? 'today' : '', new Date(m.year, m.monthNo - 1, dd).getDay() === 0 && !h ? 'off' : ''].join(' ');
+        const tip = [h ? h.name : '', c ? `${c.sessions} session(s), ${minToHM(c.minutes)} h` : '', ...(e || []).map((x) => `${x.kind}: ${x.title}`)].filter(Boolean).join(' · ');
+        cells.push(`<td class="${cls}" title="${esc(tip)}">${dd}</td>`);
+      }
+      const rows = []; for (let i = 0; i < cells.length; i += 7) rows.push(`<tr>${cells.slice(i, i + 7).join('')}</tr>`);
+      return `<div class="cal"><h3>${MONTHS[m.monthNo - 1]} ${m.year}</h3><table><thead><tr>${DOW.map((x) => `<th>${x.slice(0, 2)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    };
+    const upcoming = d.events.filter((e) => e.program === state.program && e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 12);
+    setMain(`
+      <div class="toolbar"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · batch ${esc(state.cfg.settings.batch)}</div></div>
+        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()">Print</button></div>
+      <div class="legend"><span><i style="background:rgba(0,255,255,.35)"></i>Class day</span><span><i style="background:#2a0d14;border:1px solid #ff8aa0"></i>RCC holiday</span><span><i style="box-shadow:inset 0 -3px 0 #ffff00;background:#000"></i>Exam / test / assignment due</span></div>
+      <div class="cal-grid">${d.months.map(monthCal).join('')}</div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="panel"><h2>RCC holidays</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>
+          <tbody>${d.holidays.filter((h) => !d.months.length || (h.date >= d.months[0].key && h.date.slice(0, 7) <= d.months[d.months.length - 1].key)).map((h) => `<tr><td>${fmtDate(h.date)}</td><td>${DOW[parseDs(h.date).getDay()]}</td><td class="wrap">${esc(h.name)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No holidays entered.</td></tr>'}</tbody></table></div>
+          ${isAdmin() ? '<p class="note">Edit holidays in Settings › Holidays.</p>' : ''}</div>
+        <div class="panel"><h2>Coming up</h2><div class="table-wrap"><table class="fit"><thead><tr><th style="width:110px">Date</th><th style="width:130px">What</th><th>Details</th></tr></thead>
+          <tbody>${upcoming.map((e) => `<tr><td>${fmtShort(e.date)}</td><td>${esc(e.kind)}</td><td class="wrap">${esc(e.title)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nothing scheduled.</td></tr>'}</tbody></table></div></div>
+      </div>`);
+  }
+
+  // ---------- Reports ----------
+  async function viewReports(tab = 'monthly', a, b) {
+    const tabs = [['monthly', 'Monthly report'], ['card', isAdmin() ? 'Student report card' : 'My report card'], ...(isAdmin() ? [['log', 'Reports sent']] : [])];
+    const head = `<div class="toolbar no-print" style="gap:6px">${tabs.map(([k, l]) => `<a class="btn ${k === tab ? 'primary' : ''}" href="#/reports/${k}">${l}</a>`).join('')}</div>`;
+    if (tab === 'card') return reportCard(head, a);
+    if (tab === 'log' && isAdmin()) return reportLog(head);
+    return monthlyReport(head, a, b);
+  }
+  async function monthlyReport(head, year, monthNo) {
+    const dm = defaultMonth();
+    // Reports are usually prepared for the previous month.
+    if (!year) { const i = batchMonths().findIndex((m) => m.key === dm.key); const pm = batchMonths()[Math.max(0, i - 1)] || dm; year = pm.year; monthNo = pm.monthNo; }
+    year = Number(year); monthNo = Number(monthNo);
+    const d = await cachedLoad('monthlyReport', { program: state.program, year, month: monthNo }, () => monthlyReport(head, year, monthNo));
+    if (!d) return;
+    const s = state.cfg.settings;
+    setMain(`${head}
+      <div class="toolbar no-print"><div style="flex:1"></div>${monthPicker('mr-month', d.year, d.monthNo)}<button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
+      <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Monthly Report — ${esc(d.program)}</h2><div>${esc(d.label)} · Batch ${esc(s.batch)}</div>
+        ${d.log ? `<div class="note">${esc(d.log.fileName)}${d.log.sent ? ` · sent${d.log.sentOn ? ' on ' + fmtDate(d.log.sentOn) : ''}` : ' · not yet sent'}</div>` : ''}</div>
+      <div class="grid kpis print-block">
+        <div class="kpi"><div class="label">Total days</div><div class="value">${d.totals.days}</div></div>
+        <div class="kpi"><div class="label">Total hours</div><div class="value">${minToHM(d.totals.minutes)}</div></div>
+        <div class="kpi"><div class="label">Sessions</div><div class="value">${d.totals.sessions}</div></div>
+        <div class="kpi"><div class="label">Holidays</div><div class="value">${d.holidays.length}</div><div class="hint">${d.holidays.map((h) => esc(h.name)).join(', ')}</div></div>
+      </div>
+      <div class="panel print-block" style="margin-top:16px"><h2>Attendance</h2><div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Student</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num">%</th></tr></thead>
+        <tbody>${d.attendance.map((x, i) => `<tr><td>${i + 1}</td><td class="tech">${esc(x.name)}</td><td class="num">${x.total}</td><td class="num">${x.P}</td><td class="num">${x.A}</td><td class="num">${x.L}</td><td class="num grand">${pct(x.pct)}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="grid two">
+        <div class="panel print-block"><h2>Topics covered</h2><div class="table-wrap"><table class="fit">
+          <thead><tr><th>Topic</th><th class="num" style="width:70px">Sessions</th><th class="num" style="width:70px">Hours</th></tr></thead>
+          <tbody>${d.topics.map((t) => `<tr><td class="wrap">${esc(t.code ? `(${t.code}) ${t.name}` : t.name)}</td><td class="num">${t.sessions}</td><td class="num">${minToHM(t.minutes)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">No classes.</td></tr>'}</tbody></table></div></div>
+        <div class="panel print-block"><h2>Faculty / activity</h2><div class="table-wrap"><table class="fit">
+          <thead><tr><th>Name</th><th class="num" style="width:60px">Days</th><th class="num" style="width:70px">Hours</th></tr></thead>
+          <tbody>${d.faculty.map((f) => `<tr><td class="wrap">${esc(f.name)}${f.type === 'Activity' ? ' <span class="tag">activity</span>' : ''}</td><td class="num">${f.days}</td><td class="num">${minToHM(f.minutes)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">—</td></tr>'}</tbody></table></div></div>
+      </div>
+      <div class="panel"><h2>Class log</h2><div class="table-wrap"><table class="fit">
+        <thead><tr><th style="width:105px">Date</th><th style="width:40px">#</th><th style="width:140px">Time</th><th>Topic</th><th>Faculty / activity</th><th class="num" style="width:55px">Hrs</th></tr></thead>
+        <tbody>${d.sessions.map((x) => `<tr><td>${fmtShort(x.date)}</td><td>${x.slot}</td><td>${x.start ? `${fmtTime(x.start)}–${fmtTime(x.end)}` : ''}</td><td class="wrap">${esc(x.topicCode ? `(${x.topicCode}) ${x.topic}` : x.topic)}</td><td class="wrap">${esc(x.faculty.map((f) => f.name).join(', '))}</td><td class="num">${minToHM(x.minutes)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No classes logged.</td></tr>'}
+          <tr class="total"><td colspan="5">Total</td><td class="num">${minToHM(d.totals.minutes)}</td></tr></tbody></table></div></div>
+      <div class="foot">Generated by DRP Manager on ${new Date(d.generatedAt).toLocaleString('en-GB')}</div>`);
+    wireMonthPicker('mr-month', '#/reports/monthly');
+  }
+  async function reportCard(head, studentId) {
+    const list = students();
+    if (!isAdmin()) studentId = state.cfg.me.studentId;
+    if (!studentId) studentId = list[0] && list[0].id;
+    if (!studentId) { setMain(head + '<div class="empty">No students yet.</div>'); return; }
+    const d = await cachedLoad('reportCard', { studentId }, () => reportCard(head, studentId));
+    if (!d) return;
+    const st = d.student, s = state.cfg.settings;
+    const series = [...new Set(d.exams.map((e) => e.series))];
+    setMain(`${head}
+      <div class="toolbar no-print"><div style="flex:1"></div>
+        ${isAdmin() ? `<div class="field"><label for="rc-st">Student</label><select id="rc-st">${list.map((x) => `<option value="${esc(x.id)}" ${x.id === studentId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+        <button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
+      <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Report card — ${esc(st.name)}</h2><div>${esc(st.program)} · Batch ${esc(st.batch)}</div></div>
+      <div class="grid kpis print-block">
+        <div class="kpi"><div class="label">Attendance</div><div class="value">${pct(d.attendance.overall.pct)}</div><div class="hint">${d.attendance.overall.P} present · ${d.attendance.overall.A} absent · ${d.attendance.overall.L} leave</div></div>
+        <div class="kpi"><div class="label">Days marked</div><div class="value">${d.attendance.overall.total}</div></div>
+        <div class="kpi"><div class="label">Exam papers marked</div><div class="value">${d.exams.filter((e) => e.score != null).length}</div><div class="hint">of ${d.exams.length}</div></div>
+        <div class="kpi"><div class="label">Assignments rated</div><div class="value">${d.assignments.filter((t) => t.score != null).length}</div><div class="hint">of ${d.assignments.length}</div></div>
+      </div>
+      <div class="grid two" style="margin-top:16px">
+        <div class="panel print-block"><h2>Personal details</h2><table class="info"><tbody>
+          <tr><td class="code">Name</td><td>${esc(st.name)}</td></tr><tr><td class="code">E-mail</td><td>${esc(st.email)}</td></tr>
+          <tr><td class="code">Phone</td><td>${esc(st.phone)}</td></tr><tr><td class="code">Guardian</td><td>${esc(st.guardian)}</td></tr>
+          <tr><td class="code">Address</td><td>${esc(st.address)}</td></tr></tbody></table></div>
+        <div class="panel print-block"><h2>Attendance by month</h2><div class="table-wrap"><table>
+          <thead><tr><th>Month</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num">%</th></tr></thead>
+          <tbody>${d.attendance.months.map((m) => `<tr><td>${esc(m.label)}</td><td class="num">${m.total}</td><td class="num">${m.P}</td><td class="num">${m.A}</td><td class="num">${m.L}</td><td class="num">${pct(m.pct)}</td></tr>`).join('')}
+            <tr class="total"><td>Total</td><td class="num">${d.attendance.overall.total}</td><td class="num">${d.attendance.overall.P}</td><td class="num">${d.attendance.overall.A}</td><td class="num">${d.attendance.overall.L}</td><td class="num">${pct(d.attendance.overall.pct)}</td></tr></tbody></table></div></div>
+      </div>
+      ${series.map((sr) => { const rows = d.exams.filter((e) => e.series === sr); const got = rows.filter((e) => e.score != null);
+        return `<div class="panel print-block"><h2>${esc(sr)}</h2><div class="table-wrap"><table class="fit">
+        <thead><tr><th style="width:105px">Date</th><th style="width:80px">Paper</th><th>Title</th><th class="num" style="width:70px">Marks</th><th class="num" style="width:55px">Out of</th><th class="num" style="width:55px">%</th><th>Remarks</th></tr></thead>
+        <tbody>${rows.map((e) => `<tr><td>${fmtDate(e.date)}</td><td>${esc(e.paper)}</td><td class="wrap">${esc(e.title)}</td><td class="num">${e.score == null ? '—' : fmt(e.score)}</td><td class="num">${e.maxMarks}</td><td class="num">${e.score == null ? '—' : Math.round(100 * e.score / e.maxMarks) + '%'}</td><td class="wrap">${esc(e.remarks)}</td></tr>`).join('')}
+        ${got.length ? `<tr class="total"><td colspan="3">Total</td><td class="num">${fmt(got.reduce((a, e) => a + e.score, 0))}</td><td class="num">${got.reduce((a, e) => a + e.maxMarks, 0)}</td><td class="num">${Math.round(100 * got.reduce((a, e) => a + e.score, 0) / got.reduce((a, e) => a + e.maxMarks, 0))}%</td><td></td></tr>` : ''}</tbody></table></div></div>`; }).join('')}
+      <div class="grid two">
+        <div class="panel print-block"><h2>Class tests</h2><div class="table-wrap"><table class="fit"><thead><tr><th style="width:105px">Date</th><th>Topic</th><th class="num" style="width:80px">Marks</th></tr></thead>
+          <tbody>${d.classTests.map((t) => `<tr><td>${fmtDate(t.date)}</td><td class="wrap">${esc(t.title)}</td><td class="num">${t.score == null ? '—' : `${fmt(t.score)} / ${t.maxMarks}`}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">None yet.</td></tr>'}</tbody></table></div></div>
+        <div class="panel print-block"><h2>Assignments</h2><div class="table-wrap"><table class="fit"><thead><tr><th style="width:105px">Due</th><th>Topic</th><th style="width:100px">Rating</th></tr></thead>
+          <tbody>${d.assignments.map((t) => `<tr><td>${fmtDate(t.dueDate || t.date)}</td><td class="wrap">${esc(t.title)}</td><td>${t.score == null ? '—' : stars(t.score)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">None yet.</td></tr>'}</tbody></table></div></div>
+      </div>
+      <div class="foot">Generated by DRP Manager on ${new Date(d.generatedAt).toLocaleString('en-GB')}</div>`);
+    const sel = $('#rc-st');
+    if (sel) sel.onchange = () => { location.hash = '#/reports/card/' + encodeURIComponent(sel.value); };
+  }
+  async function reportLog(head) {
+    const rows = await cachedLoad('reportLog', { program: state.program }, () => reportLog(head));
+    if (!rows) return;
+    const cur = defaultMonth().key;
+    setMain(`${head}
+      <h1>Monthly reports sent</h1><div class="sub">Tick a month once its report has been sent. The file name follows the legacy convention.</div>
+      <div class="table-wrap"><table class="fit"><thead><tr><th style="width:150px">Month</th><th>File name</th><th style="width:90px">Sent?</th><th style="width:150px">Sent on</th><th style="width:110px"></th></tr></thead>
+        <tbody>${rows.map((r) => { const k = `${r.year}-${String(r.monthNo).padStart(2, '0')}`; return `<tr>
+          <td>${esc(r.label)}</td><td class="wrap">${esc(r.fileName)}</td>
+          <td><span class="pill ${r.sent ? 'ok' : (k < cur ? 'miss' : '')}">${r.sent ? 'YES' : 'NO'}</span></td>
+          <td>${r.sentOn ? fmtDate(r.sentOn) : ''}</td>
+          <td><button class="btn small" type="button" data-y="${r.year}" data-m="${r.monthNo}" data-sent="${r.sent ? 0 : 1}">${r.sent ? 'Mark not sent' : 'Mark sent'}</button></td></tr>`; }).join('')}</tbody></table></div>`);
+    $$('[data-sent]').forEach((b) => b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await write('setReportSent', { program: state.program, year: Number(b.dataset.y), monthNo: Number(b.dataset.m), sent: b.dataset.sent === '1' }); reportLog(head); }
+      catch (e) { b.disabled = false; }
+    }));
+  }
+
+  // ---------- Faculty (admin) ----------
+  async function viewFaculty(abbr) {
+    const d = await cachedLoad('faculty', { program: state.program }, () => viewFaculty(abbr));
+    if (!d) return;
+    const sel = abbr ? d.faculty.find((f) => f.abbr === abbr) : null;
+    if (sel) {
+      setMain(`
+        <div class="toolbar"><div><h1>${esc(sel.name)}</h1><div class="sub">${esc(sel.type)} · ${esc(sel.abbr)} · ${sel.days} lecture days · ${minToHM(sel.minutes)} hours</div></div>
+          <div style="flex:1"></div><a class="btn" href="#/faculty">All faculty</a><button class="btn" type="button" onclick="window.print()">Print</button></div>
+        <div class="grid two">
+          <div class="panel print-block"><h2>Hours by month</h2><div class="table-wrap"><table><thead><tr><th>Month</th><th class="num">Hours</th></tr></thead>
+            <tbody>${d.months.map((m, i) => `<tr><td>${esc(m.label)}</td><td class="num ${sel.months[i] ? '' : 'zero'}">${minToHM(sel.months[i])}</td></tr>`).join('')}</tbody></table></div></div>
+          <div class="panel print-block"><h2>Topics</h2><div class="table-wrap"><table class="fit"><thead><tr><th>Topic</th><th class="num" style="width:70px">Hours</th></tr></thead>
+            <tbody>${sel.topics.map((t) => `<tr><td class="wrap">(${esc(t.code)}) ${esc(t.name)}</td><td class="num">${minToHM(t.minutes)}</td></tr>`).join('') || '<tr><td colspan="2" class="empty">—</td></tr>'}</tbody></table></div></div>
+        </div>
+        <div class="panel"><h2>Lectures</h2><div class="table-wrap"><table class="fit"><thead><tr><th style="width:40px">#</th><th style="width:120px">Date</th><th class="num" style="width:60px">Hrs</th><th>Topic</th></tr></thead>
+          <tbody>${sel.lectures.map((l, i) => `<tr><td>${i + 1}</td><td>${fmtDate(l.date)}</td><td class="num">${minToHM(l.minutes)}</td><td class="wrap">${esc(l.topic)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">No lectures logged.</td></tr>'}</tbody></table></div></div>`);
+      return;
+    }
+    setMain(`
+      <div class="toolbar"><div><h1>Faculty &amp; activities</h1><div class="sub">${esc(state.program)} · lecture days and hours per month (click a name for details)</div></div>
+        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()">Print</button></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Type</th><th class="num">Days</th><th class="num">Hours</th>${d.months.map((m) => `<th class="num">${esc(m.label)}</th>`).join('')}</tr></thead>
+        <tbody>${d.faculty.filter((f) => f.active || f.minutes).map((f) => `<tr class="clickable" data-abbr="${esc(f.abbr)}"><td class="tech">${esc(f.name)}</td><td>${esc(f.type)}</td><td class="num">${f.days}</td><td class="num grand">${minToHM(f.minutes)}</td>
+          ${f.months.map((m) => `<td class="num ${m ? '' : 'zero'}">${m ? minToHM(m) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+    $$('tr[data-abbr]').forEach((tr) => tr.addEventListener('click', () => { location.hash = '#/faculty/' + encodeURIComponent(tr.dataset.abbr); }));
+  }
+
+  // ---------- Settings ----------
+  const TABLES = {
+    Students: { title: 'Students', hint: 'DRP1 and DRP2 students. The ID links a student to their sign-in account.', cols: [
+      ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Batch', 'Batch', 100], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Faculty: { title: 'Faculty / activities', hint: 'Activities (Seminar, Paper Presentation, Online Learning, Exam) are listed with faculty so they can be chosen for a session.', cols: [
+      ['Code', 'Code', 70], ['Abbr', 'Abbr.', 70], ['Name', 'Name', 200], ['Type', 'Type', 100, ['Faculty', 'Activity']], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Papers: { title: 'Papers', hint: 'Examination papers per programme.', cols: [
+      ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Code', 'Code', 100], ['Title', 'Title', 320], ['Short', 'Short name', 120]] },
+    Topics: { title: 'Syllabus topics', hint: 'Topic codes as used in the class log, e.g. THE01. Sub-topics come from the legacy import.', cols: [
+      ['Code', 'Code', 80], ['Name', 'Name', 300], ['PaperCode', 'Paper', 100], ['Subject', 'Subject', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Holidays: { title: 'Holidays', hint: 'RCC closed and compensatory holidays (shaded in the class log, attendance and calendar).', cols: [
+      ['Date', 'Date', 150, 'date'], ['Name', 'Holiday', 280], ['Type', 'Type', 140, ['Closed', 'Compensatory']]] },
+    Settings: { title: 'Application settings', hint: 'Batch dates set which months appear everywhere (yyyy-mm-dd).', cols: [['Key', 'Key', 200], ['Value', 'Value', 420]] }
+  };
+
+  async function viewSettings() {
+    const me = state.cfg.me;
+    if (!isAdmin()) {
+      setMain(`<h1>Settings</h1>${accountPanel()}${displayPanel()}`);
+      wireAccount(); wireDisplay();
+      return;
+    }
+    const d = await cachedLoad('masterData', {}, viewSettings);
+    if (!d) return;
+    const users = await guarded(() => API.call('users'));
+    if (!users) return;
+    setMain(`<h1>Settings</h1>
+      <details class="sect" open><summary>Import from the legacy sheet<span class="sect-hint">read-only</span></summary><div class="sect-body">
+        <p>Copies the DRP1 2025-26 data from the Google Sheet <b>DRP Manager</b> (DRP1 › 2025-26): students, faculty, syllabus, class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log.
+        The legacy sheet is only read, never changed. Re-running is safe: anything entered or edited here is kept.</p>
+        <div class="toolbar"><div class="field" style="min-width:360px"><label for="imp-id">Legacy spreadsheet ID</label><input id="imp-id" value="${esc((d.Settings.find((s) => s.Key === 'LegacySpreadsheetId') || {}).Value || '')}"></div>
+          <button class="btn primary" type="button" id="imp-run">Run import</button></div>
+        <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
+        <p class="note">Last import: ${esc((d.Settings.find((s) => s.Key === 'LastLegacyImport') || {}).Value || 'never')}</p>
+      </div></details>
+      <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
+      ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
+      ${accountPanel()}${displayPanel()}`);
+    wireAccount(); wireDisplay();
+    renderUsers(users);
+    $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
+    $('#imp-run').onclick = async () => {
+      if (!(await confirmBox('Import from legacy sheet', 'Read the legacy DRP Manager sheet and copy its data into DRP Manager? This can take up to a minute.', 'Import'))) return;
+      const btn = $('#imp-run'), out = $('#imp-out');
+      btn.disabled = true; btn.textContent = 'Importing…';
+      try {
+        const res = await write('importLegacy', { sourceId: $('#imp-id').value.trim() });
+        if (res) {
+          out.hidden = false;
+          const line = (k, v) => `${k}: ${typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ') : v}`;
+          out.textContent = Object.entries(res).filter(([k]) => k !== 'notes').map(([k, v]) => line(k, v)).join('\n') + (res.notes.length ? '\n\n' + res.notes.join('\n') : '');
+          toast('Import finished.');
+          await refreshConfig();
+        }
+      } finally { btn.disabled = false; btn.textContent = 'Run import'; }
+    };
+  }
+  function renderUsers(users) {
+    const body = $('#users-body');
+    const studs = Object.values(state.cfg.students).flat();
+    const nameOf = (id) => (studs.find((s) => s.id === id) || {}).name || id;
+    body.innerHTML = `<div class="table-wrap"><table><thead><tr><th>User name</th><th>Role</th><th>Student</th><th>Active</th><th>Last sign-in</th><th></th></tr></thead>
+      <tbody>${users.map((u) => `<tr><td class="tech">${esc(u.username)}</td><td>${esc(u.role)}</td><td>${esc(u.studentId ? nameOf(u.studentId) : '')}</td><td>${u.active ? 'Yes' : 'No'}</td><td>${u.lastLogin ? new Date(u.lastLogin).toLocaleString('en-GB') : '—'}</td>
+        <td><button class="btn small" type="button" data-user="${esc(u.username)}">Edit</button></td></tr>`).join('')}</tbody></table></div>
+      <div class="actions"><button class="btn primary" type="button" id="user-add">Add user</button></div>
+      <p class="note">Students see the shared ${esc(state.program)} class log, syllabus and calendar, and only their own attendance, marks and report card.</p>`;
+    const edit = (u) => formDialog({
+      title: u ? `Edit ${u.username}` : 'Add user',
+      body: `<div class="form-grid">
+        <div class="field"><label for="u-name">User name</label><input id="u-name" name="username" value="${esc(u ? u.username : '')}" autocapitalize="none" required></div>
+        <div class="field"><label for="u-role">Role</label><select id="u-role" name="role"><option value="student" ${u && u.role === 'student' ? 'selected' : ''}>Student</option><option value="admin" ${u && u.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>
+        <div class="field"><label for="u-st">Student</label><select id="u-st" name="studentId"><option value="">—</option>${studs.map((s) => `<option value="${esc(s.id)}" ${u && u.studentId === s.id ? 'selected' : ''}>${esc(s.name)} (${esc(s.id)})</option>`).join('')}</select></div>
+        <div class="field"><label for="u-pw">${u ? 'New password (leave empty to keep)' : 'Password'}</label><input id="u-pw" name="password" type="password" autocomplete="new-password" ${u ? '' : 'required'}></div>
+      </div>
+      <label class="switch-row" style="margin-top:12px"><input type="checkbox" name="active" ${!u || u.active ? 'checked' : ''}> Active (can sign in)</label>`,
+      onSave: async (f) => {
+        const res = await write('saveUser', { user: { original: u ? u.username : undefined, username: f.username.value, role: f.role.value, studentId: f.studentId.value, password: f.password.value, active: f.active.checked } });
+        if (!res) return;
+        if (res.me) API.setToken(res.me.token, true);
+        toast('User saved.'); renderUsers(res.users); return true;
+      },
+      onDelete: u && u.username !== state.username ? async () => {
+        if (!(await confirmBox('Delete user', `Delete the account "${u.username}"?`, 'Delete'))) return false;
+        const res = await write('deleteUser', { username: u.username });
+        if (res) { toast('Deleted.'); renderUsers(res.users); return true; }
+      } : null
+    });
+    $('#user-add').onclick = () => edit(null);
+    $$('[data-user]', body).forEach((b) => b.addEventListener('click', () => edit(users.find((x) => x.username === b.dataset.user))));
+  }
+  function renderTable(table, rows, box) {
+    const spec = TABLES[table];
+    const input = (c, v, i) => {
+      const [key, label, , type] = c;
+      const name = `${i}.${key}`, aria = `aria-label="${esc(label)} row ${i + 1}"`;
+      if (Array.isArray(type)) return `<select name="${name}" ${aria}>${type.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}${v && !type.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select>`;
+      if (type === 'bool') return `<input type="checkbox" name="${name}" ${v === '' || v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;
+      if (type === 'date') return `<input type="date" name="${name}" value="${esc(v)}" ${aria}>`;
+      return `<input name="${name}" value="${esc(v)}" ${aria}>`;
+    };
+    const draw = () => {
+      box.innerHTML = `<p class="note">${esc(spec.hint)}</p>
+        <div class="table-wrap"><table class="edit"><thead><tr>${spec.cols.map((c) => `<th style="min-width:${c[2]}px">${esc(c[1])}</th>`).join('')}<th></th></tr></thead>
+        <tbody>${rows.map((r, i) => `<tr>${spec.cols.map((c) => `<td>${input(c, r[c[0]] ?? '', i)}</td>`).join('')}<td><button class="btn small danger" type="button" data-del="${i}" aria-label="Delete row ${i + 1}">✕</button></td></tr>`).join('')}</tbody></table></div>
+        <div class="actions"><button class="btn" type="button" data-add>Add row</button><button class="btn primary" type="button" data-save>Save ${esc(spec.title.toLowerCase())}</button></div>`;
+      $('[data-add]', box).onclick = () => { collect(); rows.push({}); draw(); };
+      $$('[data-del]', box).forEach((b) => b.addEventListener('click', () => { collect(); rows.splice(Number(b.dataset.del), 1); draw(); }));
+      $('[data-save]', box).onclick = async () => {
+        collect();
+        const res = await write('saveConfig', { table, rows });
+        if (res) { toast(`${spec.title} saved.`); rows = res[table]; draw(); refreshConfig(); }
+      };
+    };
+    const collect = () => {
+      rows = rows.map((r, i) => {
+        const o = { ...r };
+        spec.cols.forEach(([k, , , type]) => {
+          const el = box.querySelector(`[name="${i}.${k}"]`);
+          if (el) o[k] = type === 'bool' ? el.checked : el.value;
+        });
+        return o;
+      });
+    };
+    draw();
+  }
+  function accountPanel() {
+    return `<details class="sect"><summary>My account<span class="sect-hint">${esc(state.username)}</span></summary><div class="sect-body">
+      <form id="acct-form" class="form-grid" autocomplete="off">
+        <div class="field"><label for="a-cur">Current password</label><input id="a-cur" type="password" autocomplete="current-password" required></div>
+        <div class="field"><label for="a-user">New user name (optional)</label><input id="a-user" autocapitalize="none" placeholder="${esc(state.username)}"></div>
+        <div class="field"><label for="a-new">New password (optional)</label><input id="a-new" type="password" autocomplete="new-password"></div>
+        <div class="field" style="justify-content:end"><button class="btn primary" type="submit">Update account</button></div>
+      </form></div></details>`;
+  }
+  function wireAccount() {
+    $('#acct-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const res = await write('updateMe', { currentPassword: $('#a-cur').value, newUsername: $('#a-user').value.trim() || undefined, newPassword: $('#a-new').value || undefined });
+      if (res) { API.setToken(res.token, API.remembered()); state.username = res.username; saveCfg(); renderBadge(); toast('Account updated.'); e.target.reset(); }
+    };
+  }
+  function displayPanel() {
+    const f = window.DrpPrefs.getFont();
+    return `<details class="sect"><summary>Display<span class="sect-hint">this device</span></summary><div class="sect-body">
+      <div class="field" style="max-width:260px"><label for="p-font">Font</label><select id="p-font"><option value="default" ${f === 'default' ? 'selected' : ''}>Default</option><option value="courier" ${f === 'courier' ? 'selected' : ''}>Courier New</option></select></div></div></details>`;
+  }
+  function wireDisplay() { $('#p-font').onchange = (e) => window.DrpPrefs.setFont(e.target.value); }
+
+  // ---------- Help ----------
+  function viewHelp() {
+    setMain('<div id="help-root"></div>');
+    window.DrpHelp.render($('#help-root'), { version: (state.cfg.release || {}).version, date: (state.cfg.release || {}).date });
+  }
+
+  // ---------- start ----------
+  (async function boot() {
+    $('#login-version').textContent = 'DRP Manager';
+    if (!API.getToken()) return showLogin();
+    try {
+      const cached = JSON.parse(localStorage.getItem('drp.cfg') || 'null');
+      if (cached && cached.cfg) { state.role = cached.role; state.username = cached.username; state.cfg = cached.cfg; startApp(); }
+    } catch (e) {}
+    try {
+      const data = await API.call('session');
+      applySession(data);
+      if ($('#app-view').hidden) startApp(); else { renderBadge(); renderFooter(); }
+    } catch (e) {
+      if (e.auth || !state.cfg) { logout(); if (!e.auth) toast(e.message, true); }
+    }
+  })();
+})();

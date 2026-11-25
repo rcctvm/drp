@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DRP Manager — RCC Thiruvananthapuram</title>
+  <meta name="description" content="DRP Manager: Diploma in Radiological Physics class log, attendance, syllabus, exams and reports. Division of Radiation Physics, Regional Cancer Centre, Thiruvananthapuram.">
+  <meta name="theme-color" content="#0C343D">
+  <link rel="icon" href="assets/logo.jpg">
+  <script src="js/prefs.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Login -->
+  <div id="login-view" class="login-wrap" hidden>
+    <form class="login" id="login-form" autocomplete="off">
+      <img src="assets/logo.jpg" alt="Regional Cancer Centre, Thiruvananthapuram logo">
+      <h1>DRP Manager</h1>
+      <p>Diploma in Radiological Physics<br>Division of Radiation Physics, RCC Thiruvananthapuram</p>
+      <div class="field">
+        <label for="login-user">User name</label>
+        <input id="login-user" type="text" required autocomplete="username" autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="login-key">Password</label>
+        <input id="login-key" type="password" required autocomplete="current-password">
+      </div>
+      <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+        <input id="login-remember" type="checkbox" style="width:auto;min-height:0" checked>
+        <label for="login-remember" style="font-size:13px">Remember on this device</label>
+      </div>
+      <button class="btn primary" type="submit" id="login-btn">Sign in</button>
+      <p id="login-error" style="color:#ff8aa0;margin-top:12px" hidden></p>
+      <div class="login-foot"><span id="login-version">DRP Manager</span> · <a href="help.html">Help &amp; user manual</a></div>
+    </form>
+  </div>
+
+  <!-- App -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <img src="assets/logo.jpg" alt="RCC logo">
+      <div class="brand"><b>DRP Manager</b><small id="dept-line">Division of Radiation Physics, RCC Thiruvananthapuram</small></div>
+      <div class="spacer"></div>
+      <span class="role-badge" id="role-badge"></span>
+      <button class="btn small" id="logout-btn" type="button">Sign out</button>
+    </header>
+    <nav class="tabs" id="tabs">
+      <a href="#/dashboard" data-view="dashboard">Dashboard</a>
+      <a href="#/log" data-view="log">Class log</a>
+      <a href="#/attendance" data-view="attendance">Attendance</a>
+      <a href="#/syllabus" data-view="syllabus">Syllabus</a>
+      <a href="#/exams" data-view="exams">Exams</a>
+      <a href="#/tests" data-view="tests">Class tests</a>
+      <a href="#/assignments" data-view="assignments">Assignments</a>
+      <a href="#/calendar" data-view="calendar">Calendar</a>
+      <a href="#/reports" data-view="reports">Reports</a>
+      <a href="#/faculty" data-view="faculty" class="admin-only">Faculty</a>
+      <a href="#/settings" data-view="settings">Settings</a>
+      <a href="#/help" data-view="help">Help</a>
+    </nav>
+    <main id="main"><div class="loading">Loading…</div></main>
+    <footer class="app-footer" id="app-footer"></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="confirm-dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-text"></p>
+    <div class="actions">
+      <button class="btn" value="cancel" id="confirm-cancel" type="button">Cancel</button>
+      <button class="btn primary" value="ok" id="confirm-ok" type="button">OK</button>
+    </div>
+  </dialog>
+
+  <dialog id="form-dialog" class="wide">
+    <form id="form-dialog-form" method="dialog" novalidate>
+      <h3 id="form-dialog-title"></h3>
+      <div id="form-dialog-body"></div>
+      <div class="actions">
+        <button class="btn primary" type="submit" id="form-dialog-ok">Save</button>
+        <button class="btn" type="button" id="form-dialog-cancel">Cancel</button>
+        <span style="flex:1"></span>
+        <button class="btn danger" type="button" id="form-dialog-delete" hidden>Delete</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/help.js"></script>
+  <script src="js/pwtoggle.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
