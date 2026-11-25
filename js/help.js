@@ -25,7 +25,17 @@
       and who taught it. Use the search box to find a topic or sub-topic.</p>`],
     ['Exams, class tests and assignments', `<p>Internal exams are grouped by series (Internal 1, 2, 3). Class tests are marked out of a maximum;
       assignments are rated 1–5 stars, as in the old sheet. Admins click a row to enter marks, or <b>Edit</b> to change the details.</p>`],
-    ['Calendar', `<p>Every month of the batch with class days, RCC holidays and exam / test / assignment dates. Hover a day for details.</p>`],
+    ['Academic years', `<p>Everything in DRP Manager belongs to an academic year (e.g. 2025-2026): the class log, attendance, students,
+      exams, class tests, assignments, the calendar's events and the monthly-report log. The <b>current</b> year is shown by default every time
+      DRP Manager is opened; switch to another year with the <b>Academic year</b> selector on the Dashboard, the Calendar or in Settings
+      (the year shown is also in the badge at the top right). Students always see their own year.</p>
+      <p><b>Starting a new year (admin):</b> Settings › Academic year › add a row (e.g. 2026-2027, first and last month) and save; choose the
+      new year; on the Calendar page open <i>This year's academic events</i> and click <i>Copy … events</i> (dates move forward one year), then
+      adjust them; open <i>This year's RCC holidays</i> and enter the holidays from RCC's holiday calendar for that year; add the new students
+      under Settings › Students with that academic year.</p>`],
+    ['Calendar', `<p>The academic calendar of the selected year, in the format of the printed calendar: academic events in colour, RCC closed
+      holidays in red and compensatory holidays in orange. Hover a date for details. <b>Print / save as PDF (A3)</b> prints it on one A3 page.</p>
+      <p><b>Admins:</b> below the calendar, <i>This year's RCC holidays</i> and <i>This year's academic events</i> edit the calendar of the year shown.</p>`],
     ['Reports', `<ul><li><b>Monthly report</b>: total days and hours, attendance (T, P, A, L, %), topics covered, faculty hours and the full class log for the month. Print or save as PDF.</li>
       <li><b>Report card</b>: one student's details, attendance by month, exam marks, class tests and assignments.</li>
       <li><b>Reports sent</b> (admin): tick each month once the monthly report has been sent.</li></ul>`],

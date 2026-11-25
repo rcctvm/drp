@@ -40,7 +40,7 @@
   }
   function clearPages() { cache.clear(); try { localStorage.removeItem(PAGES_KEY); } catch (e) {} }
   API.onVersionChange(() => clearPages());
-  const pageKey = (action, params) => action + JSON.stringify(params);
+  const pageKey = (action, params) => action + '@' + (state.batch || '') + JSON.stringify(params);
 
   /** Loads the pages people open most, in ONE request, right after sign-in. */
   async function prefetch() {
@@ -61,7 +61,9 @@
     ].filter(([a, prm]) => { const h = cache.get(pageKey(a, prm)); return !h || Date.now() - h.at > FRESH_MS; });
     if (!want.length) return;
     try {
-      const res = await API.call('batch', { calls: want.map(([action, params]) => ({ action, params })) });
+      const yr = state.batch;
+      const res = await API.call('batch', { batch: yr, calls: want.map(([action, params]) => ({ action, params: { ...params, batch: yr } })) });
+      if (yr !== state.batch) return;   // the year was switched meanwhile: don't store under the wrong year
       res.forEach((r, k) => { if (r.ok) cacheSet(pageKey(want[k][0], want[k][1]), r.data); });
     } catch (e) { /* prefetch is best-effort */ }
   }
@@ -152,7 +154,38 @@
   const stars = (n, max = 5) => { n = Math.round(Number(n) || 0); return `<span class="stars" aria-label="${n} of ${max} stars">${'★'.repeat(n)}<span class="off">${'★'.repeat(Math.max(0, max - n))}</span></span>`; };
 
   /** Batch months [{year, monthNo, key, label}] and the current/nearest one. */
-  const batchMonths = () => state.cfg.months || [];
+  /** Academic years from the server: [{ id, start, end, current, months }]. */
+  const years = () => state.cfg.years || [];
+  const year = () => years().find((y) => y.id === state.batch) || years().find((y) => y.current) || { id: state.cfg.settings.batch, start: state.cfg.settings.batchStart, end: state.cfg.settings.batchEnd, months: state.cfg.months || [] };
+  const batchMonths = () => year().months || [];
+  /**
+   * Chooses the academic year to show: the current year by default (also on every new visit);
+   * a year picked in the year selector lasts until the browser is closed.
+   */
+  function initYear() {
+    let pick = null;
+    try { pick = sessionStorage.getItem('drp.year'); } catch (e) {}
+    const ok = (id) => years().some((y) => y.id === id);
+    state.batch = ok(pick) ? pick : (state.cfg.currentYear || (years()[0] || {}).id || '');
+    API.setExtra({ batch: state.batch });
+  }
+  function selectYear(id) {
+    if (!years().some((y) => y.id === id) || id === state.batch) return;
+    state.batch = id;
+    try { sessionStorage.setItem('drp.year', id); } catch (e) {}
+    API.setExtra({ batch: id });
+    renderBadge();
+    route();
+    setTimeout(prefetch, 50);
+  }
+  /** "Academic year [2025-2026 ▾]" picker (plain text when there is only one year). */
+  function yearPicker(id) {
+    const list = years();
+    if (list.length < 2) return `<div class="field"><label>Academic year</label><div class="year-chip">${esc(year().id || '—')}</div></div>`;
+    return `<div class="field"><label for="${id}">Academic year</label><select id="${id}" class="year-select">${list.slice().reverse().map((y) =>
+      `<option value="${esc(y.id)}" ${y.id === state.batch ? 'selected' : ''}>${esc(y.id)}${y.current ? ' (current)' : ''}</option>`).join('')}</select></div>`;
+  }
+  function wireYearPicker(id) { const el = $('#' + id); if (el) el.onchange = () => selectYear(el.value); }
   function defaultMonth() {
     const t = new Date(), key = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
     const ms = batchMonths();
@@ -187,7 +220,7 @@
     return '<option value="">— none —</option>' + Object.keys(byPaper).map((p) => `<optgroup label="${esc(paperTitle(p))}">${
       byPaper[p].map((t) => `<option value="${esc(t.code)}" ${t.code === sel ? 'selected' : ''}>(${esc(t.code)}) ${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
   };
-  const students = () => state.cfg.students[state.program] || [];
+  const students = () => (state.cfg.students[state.program] || []).filter((s) => !s.batch || s.batch === state.batch);
 
   function destroyCharts() { state.charts.forEach((c) => c.destroy()); state.charts = []; }
   function chart(canvas, config) {
@@ -332,6 +365,7 @@
     saveCfg();
     const st = data.config.settings || {};
     window.DrpPrefs.setDefaults(st.defaultFont, st.defaultWidth);
+    initYear();
   }
   function logout() {
     API.setToken('', false);
@@ -359,7 +393,8 @@
   }
   function renderBadge() {
     const me = state.cfg.me || {};
-    $('#role-badge').textContent = isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · student`;
+    $('#role-badge').textContent = (isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · student`) + (state.batch ? ` · ${state.batch}` : '');
+    $('#role-badge').title = 'Academic year shown: ' + (state.batch || '') + '. Change it on the Dashboard or in Settings.';
   }
   /** "updated 25 Nov 2026, 18:42 (dd9313c)" — stamped on every website publish (js/build.js). */
   function buildLabel() {
@@ -424,10 +459,11 @@
     if (d.paperMinutes.Unassigned) paperRows.push({ label: 'No topic', minutes: d.paperMinutes.Unassigned });
     setMain(`
       <div class="toolbar">
-        <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}${s.batch ? ` · Batch ${esc(s.batch)}` : ''}</div></div>
+        <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}</div></div>
+        <div style="flex:1"></div>${yearPicker('dash-year')}
       </div>
       <div class="grid kpis">
-        <div class="kpi"><div class="label">Class days</div><div class="value">${fmt(d.totals.days)}</div><div class="hint">${fmtDate(s.batchStart)} – ${fmtDate(s.batchEnd)}</div></div>
+        <div class="kpi"><div class="label">Class days</div><div class="value">${fmt(d.totals.days)}</div><div class="hint">${fmtDate(year().start)} – ${fmtDate(year().end)}</div></div>
         <div class="kpi"><div class="label">Teaching hours</div><div class="value">${minToHM(d.totals.minutes)}</div><div class="hint">hours:minutes · target ${fmt(d.targets.theory)} theory</div></div>
         <div class="kpi"><div class="label">Sessions logged</div><div class="value">${fmt(d.totals.sessions)}</div></div>
         <div class="kpi"><div class="label">Syllabus topics taught</div><div class="value">${fmt(d.topicsCovered)}<small style="font-size:16px;color:var(--muted)"> / ${fmt(d.topicsTotal)}</small></div></div>
@@ -466,6 +502,7 @@
         }
       });
     }
+    wireYearPicker('dash-year');
     if (att.length) attendanceChart($('#c-att'), att);
     if (facList.length) facultyChart($('#c-fac'), facList);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
@@ -794,9 +831,41 @@
     const d = await cachedLoad('calendar', { program: state.program }, viewCalendar);
     if (!d) return;
     setMain(`
-      <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · batch ${esc(state.cfg.settings.batch)} · hover a date for details${isAdmin() ? ' · edit events and holidays in Settings' : ''}</div></div>
-        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
-      ${window.DrpCalendar.render(d, { today: todayDs() })}`);
+      <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · academic year ${esc(year().id)} · hover a date for details${isAdmin() ? ' · edit this year’s holidays and events below the calendar' : ''}</div></div>
+        <div style="flex:1"></div>${yearPicker('cal-year')}<button class="btn" type="button" onclick="window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
+      ${window.DrpCalendar.render(d, { today: todayDs() })}
+      ${isAdmin() ? `<div class="no-print" style="margin-top:18px">
+        <details class="sect" id="cal-hol"><summary>This year’s RCC holidays<span class="sect-hint">${d.holidays.filter((h) => h.date >= year().start && h.date <= year().end).length} in ${esc(year().id)}</span></summary><div class="sect-body"></div></details>
+        <details class="sect" id="cal-ev"><summary>This year’s academic events<span class="sect-hint">${d.events.length} in the key</span></summary><div class="sect-body"></div></details>
+      </div>` : ''}`);
+    wireYearPicker('cal-year');
+    if (!isAdmin()) return;
+    const reload = () => { viewCalendar(); };
+    const loadMaster = () => guarded(() => API.call('masterData'));
+    $('#cal-hol').addEventListener('toggle', async (e) => {
+      const det = e.currentTarget; if (!det.open || det.dataset.ready) return; det.dataset.ready = 1;
+      const box = $('.sect-body', det); box.innerHTML = '<div class="loading">Loading…</div>';
+      const m = await loadMaster(); if (!m) return;
+      const y = year();
+      const rows = (m.Holidays || []).filter((h) => h.Date >= y.start && h.Date <= y.end).sort((a, b) => a.Date.localeCompare(b.Date));
+      renderTable('Holidays', rows, box, { scope: 'year', title: 'Holidays',
+        hint: `RCC holidays from ${fmtDate(y.start)} to ${fmtDate(y.end)}, as in this year’s RCC holiday calendar. Closed = red, Compensatory = orange on the calendar. Saving replaces only the holidays in these dates (holidays are shared by every academic year that covers the same dates).`,
+        onSaved: reload });
+    });
+    $('#cal-ev').addEventListener('toggle', async (e) => {
+      const det = e.currentTarget; if (!det.open || det.dataset.ready) return; det.dataset.ready = 1;
+      const box = $('.sect-body', det); box.innerHTML = '<div class="loading">Loading…</div>';
+      const m = await loadMaster(); if (!m) return;
+      const rows = (m.Events || []).filter((r) => (r.Batch || '') === state.batch).sort((a, b) => Number(a.No) - Number(b.No));
+      const prev = years()[years().findIndex((y) => y.id === state.batch) - 1];
+      box.innerHTML = `${!rows.length && prev ? `<div class="warn-box">No academic events for ${esc(state.batch)} yet. <button class="btn small" type="button" id="ev-copy">Copy ${esc(prev.id)}’s events, moved forward one year</button> then adjust the dates below.</div>` : ''}<div id="ev-table"></div>`;
+      renderTable('Events', rows, $('#ev-table'), { scope: 'year', title: 'Academic events',
+        cols: TABLES.Events.cols.filter((c) => c[0] !== 'Batch'),
+        hint: `Numbered key of the ${state.batch} calendar. Dates = optional list (yyyy-mm-dd, comma separated) that replaces Start–End, e.g. exam days only. Saving changes only ${state.batch}.`,
+        onSaved: reload });
+      const cp = $('#ev-copy');
+      if (cp) cp.onclick = async () => { cp.disabled = true; try { const r = await write('copyEvents', {}); if (r) { toast('Copied. Adjust the dates for this year.'); reload(); } } catch (err) { cp.disabled = false; } };
+    });
   }
 
   // ---------- Reports ----------
@@ -817,7 +886,7 @@
     const s = state.cfg.settings;
     setMain(`${head}
       <div class="toolbar no-print"><div style="flex:1"></div>${monthPicker('mr-month', d.year, d.monthNo)}<button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
-      <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Monthly Report — ${esc(d.program)}</h2><div>${esc(d.label)} · Batch ${esc(s.batch)}</div>
+      <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Monthly Report — ${esc(d.program)}</h2><div>${esc(d.label)} · Academic year ${esc(year().id)}</div>
         ${d.log ? `<div class="note">${esc(d.log.fileName)}${d.log.sent ? ` · sent${d.log.sentOn ? ' on ' + fmtDate(d.log.sentOn) : ''}` : ' · not yet sent'}</div>` : ''}</div>
       <div class="grid kpis print-block">
         <div class="kpi"><div class="label">Total days</div><div class="value">${d.totals.days}</div></div>
@@ -938,8 +1007,10 @@
 
   // ---------- Settings ----------
   const TABLES = {
-    Students: { title: 'Students', hint: 'DRP1 and DRP2 students. The ID links a student to their sign-in account.', cols: [
-      ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Batch', 'Batch', 100], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Batches: { title: 'Academic years', hint: 'One row per academic year (batch), e.g. 2026-2027 with its first and last month. The current year is chosen from today’s date; tick Current only to decide between two overlapping years.', cols: [
+      ['ID', 'Academic year', 120], ['Start', 'Starts', 150, 'date'], ['End', 'Ends', 150, 'date'], ['Current', 'Current', 70, 'bool'], ['Notes', 'Notes', 260]] },
+    Students: { title: 'Students', hint: 'DRP1 and DRP2 students of every academic year. The ID links a student to their sign-in account; the academic year decides where they appear.', cols: [
+      ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Batch', 'Academic year', 120, 'year'], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Faculty: { title: 'Faculty / activities', hint: 'Activities (Seminar, Paper Presentation, Online Learning, Exam) are listed with faculty so they can be chosen for a session.', cols: [
       ['Code', 'Code', 70], ['Abbr', 'Abbr.', 70], ['Name', 'Name', 200], ['Type', 'Type', 100, ['Faculty', 'Activity']], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Papers: { title: 'Papers', hint: 'Examination papers per programme.', cols: [
@@ -947,16 +1018,17 @@
     Topics: { title: 'Syllabus topics', hint: 'Topic codes as used in the class log, e.g. THE01. Sub-topics come from the legacy import.', cols: [
       ['Code', 'Code', 80], ['Name', 'Name', 300], ['PaperCode', 'Paper', 100], ['Subject', 'Subject', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Events: { title: 'Academic calendar events', hint: 'Numbered key of the academic calendar. Dates = optional list (yyyy-mm-dd, comma separated) that replaces Start–End, e.g. exam days only. Colour as #RRGGBB.', cols: [
-      ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Title', 'Event', 300], ['Start', 'Start', 150, 'date'], ['End', 'End', 150, 'date'], ['Dates', 'Only these dates (optional)', 220], ['Color', 'Colour', 90, 'color'], ['SkipSundays', 'Skip Sundays', 70, 'bool']] },
+      ['Batch', 'Academic year', 110, 'year'], ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Title', 'Event', 300], ['Start', 'Start', 150, 'date'], ['End', 'End', 150, 'date'], ['Dates', 'Only these dates (optional)', 220], ['Color', 'Colour', 90, 'color'], ['SkipSundays', 'Skip Sundays', 70, 'bool']] },
     Holidays: { title: 'Holidays', hint: 'RCC closed and compensatory holidays (shaded in the class log, attendance and calendar).', cols: [
       ['Date', 'Date', 150, 'date'], ['Name', 'Holiday', 280], ['Type', 'Type', 140, ['Closed', 'Compensatory']]] },
-    Settings: { title: 'Application settings', hint: 'Batch dates set which months appear everywhere (yyyy-mm-dd).', cols: [['Key', 'Key', 200], ['Value', 'Value', 420]] }
+    Settings: { title: 'Application settings', hint: 'General settings. Academic years are set under Academic years.', cols: [['Key', 'Key', 200], ['Value', 'Value', 420]] }
   };
 
   async function viewSettings() {
     const me = state.cfg.me;
     if (!isAdmin()) {
-      setMain(`<h1>Settings</h1><div id="display-box">${displayPanel()}</div>${accountPanel()}`);
+      setMain(`<h1>Settings</h1>${yearPanel()}<div id="display-box">${displayPanel()}</div>${accountPanel()}`);
+      wireYearPicker('set-year');
       wireAccount(); wireDisplay();
       return;
     }
@@ -965,6 +1037,7 @@
     const users = await guarded(() => API.call('users'));
     if (!users) return;
     setMain(`<h1>Settings</h1>
+      ${yearPanel()}
       <div id="display-box">${displayPanel()}</div>
       <details class="sect"><summary>Import from the legacy sheet<span class="sect-hint">read-only</span></summary><div class="sect-body">
         <p>Copies the DRP1 2025-26 data from the Google Sheet <b>DRP Manager</b> (DRP1 › 2025-26): students, faculty, syllabus, class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log.
@@ -977,7 +1050,8 @@
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
       ${accountPanel()}`);
-    wireAccount(); wireDisplay();
+    wireAccount(); wireDisplay(); wireYearPicker('set-year');
+    renderTable('Batches', d.Batches || [], $('#years-table'), { onSaved: async () => { await refreshConfig(); initYear(); viewSettings(); } });
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
     $('#imp-run').onclick = async () => {
@@ -1022,7 +1096,7 @@
       body: `<div class="form-grid">
         <div class="field"><label for="u-name">User name</label><input id="u-name" name="username" value="${esc(u ? u.username : '')}" autocapitalize="none" required></div>
         <div class="field"><label for="u-role">Role</label><select id="u-role" name="role"><option value="student" ${u && u.role === 'student' ? 'selected' : ''}>Student</option><option value="admin" ${u && u.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>
-        <div class="field"><label for="u-st">Student</label><select id="u-st" name="studentId"><option value="">—</option>${studs.map((s) => `<option value="${esc(s.id)}" ${u && u.studentId === s.id ? 'selected' : ''}>${esc(s.name)} (${esc(s.id)})</option>`).join('')}</select></div>
+        <div class="field"><label for="u-st">Student</label><select id="u-st" name="studentId"><option value="">—</option>${studs.map((s) => `<option value="${esc(s.id)}" ${u && u.studentId === s.id ? 'selected' : ''}>${esc(s.name)} (${esc(s.id)}${s.batch ? ', ' + esc(s.batch) : ''})</option>`).join('')}</select></div>
         <div class="field"><label for="u-pw">${u ? 'New password (leave empty to keep)' : 'Password'}</label><input id="u-pw" name="password" type="password" autocomplete="new-password" ${u ? '' : 'required'}></div>
       </div>
       <label class="switch-row" style="margin-top:12px"><input type="checkbox" name="active" ${!u || u.active ? 'checked' : ''}> Active (can sign in)</label>`,
@@ -1041,10 +1115,15 @@
     $('#user-add').onclick = () => edit(null);
     $$('[data-user]', body).forEach((b) => b.addEventListener('click', () => edit(users.find((x) => x.username === b.dataset.user))));
   }
-  function renderTable(table, rows, box) {
-    const spec = TABLES[table];
+  /**
+   * Editable table. opts.scope 'year' saves only the selected academic year's part (Calendar page);
+   * opts.cols / opts.hint / opts.title override the table's defaults; opts.onSaved(res) after saving.
+   */
+  function renderTable(table, rows, box, opts = {}) {
+    const spec = { ...TABLES[table], ...(opts.cols ? { cols: opts.cols } : {}), ...(opts.hint ? { hint: opts.hint } : {}), ...(opts.title ? { title: opts.title } : {}) };
     const input = (c, v, i) => {
-      const [key, label, , type] = c;
+      let [key, label, , type] = c;
+      if (type === 'year') { type = years().map((y) => y.id); if (!v) v = state.batch; }
       const name = `${i}.${key}`, aria = `aria-label="${esc(label)} row ${i + 1}"`;
       if (Array.isArray(type)) return `<select name="${name}" ${aria}>${type.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}${v && !type.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select>`;
       if (type === 'bool') return `<input type="checkbox" name="${name}" ${v === '' || v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;
@@ -1061,8 +1140,11 @@
       $$('[data-del]', box).forEach((b) => b.addEventListener('click', () => { collect(); rows.splice(Number(b.dataset.del), 1); draw(); }));
       $('[data-save]', box).onclick = async () => {
         collect();
-        const res = await write('saveConfig', { table, rows });
-        if (res) { toast(`${spec.title} saved.`); rows = res[table]; draw(); refreshConfig(); }
+        const res = await write('saveConfig', { table, rows, scope: opts.scope });
+        if (!res) return;
+        toast(`${spec.title} saved.`);
+        if (opts.onSaved) { opts.onSaved(res); return; }
+        rows = res[table]; draw(); refreshConfig();
       };
     };
     const collect = () => {
@@ -1076,6 +1158,15 @@
       });
     };
     draw();
+  }
+  /** Settings › Academic year: which year is shown, and (admins) the list of years. */
+  function yearPanel() {
+    const y = year();
+    return `<details class="sect" open><summary>Academic year<span class="sect-hint">${esc(y.id || '')}${y.current ? ' · current' : ''}</span></summary><div class="sect-body">
+      <div class="toolbar" style="margin-bottom:6px">${yearPicker('set-year')}
+        <p class="note" style="margin:0;align-self:center">${fmtDate(y.start)} – ${fmtDate(y.end)}. Every page shows this academic year. The current year is shown by default each time DRP Manager is opened.</p></div>
+      ${isAdmin() ? '<h3 style="margin-top:12px">Academic years</h3><div id="years-table"></div><p class="note">To start a new year: add a row (e.g. 2026-2027 with its first and last month), save, choose it above, then on the Calendar page copy last year’s events and enter that year’s RCC holidays. Add the new students under Students with that academic year.</p>' : ''}
+    </div></details>`;
   }
   function accountPanel() {
     return `<details class="sect"><summary>My account<span class="sect-hint">${esc(state.username)}</span></summary><div class="sect-body">
@@ -1146,7 +1237,7 @@
     if (!API.getToken()) return showLogin();
     try {
       const cached = JSON.parse(localStorage.getItem('drp.cfg') || 'null');
-      if (cached && cached.cfg) { state.role = cached.role; state.username = cached.username; state.cfg = cached.cfg; startApp(); }
+      if (cached && cached.cfg) { state.role = cached.role; state.username = cached.username; state.cfg = cached.cfg; initYear(); startApp(); }
     } catch (e) {}
     try {
       const data = await API.call('session');

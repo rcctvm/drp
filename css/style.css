@@ -385,3 +385,6 @@ table.acal-month td[title] { cursor: help; }
 }
 /* Text on a coloured date: white or black, whichever reads better (set per cell as --ink). */
 table.acal-month td.painted { color: var(--ink, #000) !important; }
+/* Academic year picker / chip */
+.year-select { min-width: 190px; font-weight: 700; color: var(--yellow); border-color: var(--yellow); }
+.year-chip { min-height: 38px; display: flex; align-items: center; padding: 0 12px; border: 1px solid var(--yellow); border-radius: 8px; color: var(--yellow); font-weight: 700; background: var(--cell); }

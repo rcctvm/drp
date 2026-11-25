@@ -23,11 +23,13 @@
   let dataVersion = null;
   try { dataVersion = localStorage.getItem('drp.v'); } catch (e) {}
   const versionListeners = [];
+  // Sent with every request (the selected academic year); an explicit parameter wins.
+  let extra = {};
 
   async function call(action, params = {}) {
     const url = window.DRP_CONFIG.API_URL;
     if (!url || url.includes('REPLACE_WITH')) throw new Error('API URL not configured (js/config.js).');
-    const body = JSON.stringify({ action, token: memToken, ...params });
+    const body = JSON.stringify({ action, token: memToken, ...extra, ...params });
     let res;
     try {
       res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, redirect: 'follow' });
@@ -50,5 +52,6 @@
     return json.data;
   }
 
-  window.DrpAPI = { call, getToken: () => memToken, setToken, remembered, onVersionChange: (fn) => versionListeners.push(fn) };
+  window.DrpAPI = { call, getToken: () => memToken, setToken, remembered, onVersionChange: (fn) => versionListeners.push(fn),
+    setExtra: (o) => { extra = { ...(o || {}) }; } };
 })();
