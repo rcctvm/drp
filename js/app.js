@@ -687,7 +687,7 @@
     if (!d) return;
     setMain(`
       <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · batch ${esc(state.cfg.settings.batch)} · hover a date for details${isAdmin() ? ' · edit events and holidays in Settings' : ''}</div></div>
-        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
+        <div style="flex:1"></div><button class="btn" type="button" onclick="window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
       ${window.DrpCalendar.render(d, { today: todayDs() })}`);
   }
 
