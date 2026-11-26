@@ -473,8 +473,9 @@
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + (x.pct || 0), 0) / att.filter((x) => x.pct != null).length || 0) / 10 : null;
     const papers = curPapers();
     const paperRows = papers.map((p) => ({ label: p.short || p.code, minutes: d.paperMinutes[p.code] || 0 }));
-    if (d.paperMinutes.Other) paperRows.push({ label: 'Other', minutes: d.paperMinutes.Other });
-    if (d.paperMinutes.Unassigned) paperRows.push({ label: 'No topic', minutes: d.paperMinutes.Unassigned });
+    // Hours outside the papers (project work, training, exams, ...): listed under the chart, not as a bar.
+    const other = d.otherMinutes || Object.fromEntries(['Other', 'Unassigned'].filter((k) => d.paperMinutes[k]).map((k) => [k === 'Unassigned' ? 'No topic' : k, d.paperMinutes[k]]));
+    const otherList = Object.entries(other).filter(([, m]) => m > 0).sort((a, b) => b[1] - a[1]);
     setMain(`
       <div class="toolbar">
         <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}</div></div>
@@ -490,7 +491,8 @@
       </div>
       <div class="grid two" style="margin-top:16px">
         <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
-        <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div></div>
+        <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div>
+          ${otherList.length ? `<p class="note" style="margin:8px 0 0">Not in a paper: ${otherList.map(([k, m]) => `${esc(k)} <b>${minToHM(m)}</b> h`).join(' · ')}</p>` : ''}</div>
       </div>
       <div class="grid two">
         <div class="panel chart-sheet"><h2>Attendance</h2>
