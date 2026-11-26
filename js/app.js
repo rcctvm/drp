@@ -185,6 +185,8 @@
     return `<div class="field"><label for="${id}">Academic year</label><select id="${id}" class="year-select">${list.slice().reverse().map((y) =>
       `<option value="${esc(y.id)}" ${y.id === state.batch ? 'selected' : ''}>${esc(y.id)}${y.current ? ' (current)' : ''}</option>`).join('')}</select></div>`;
   }
+  /** Read-only year shown on the Dashboard and Calendar; the year is chosen only in Settings. */
+  function yearLabel() { return `<div class="field"><label>Academic year</label><div class="year-chip" title="Change it in Settings › Academic year">${esc(year().id || '—')}</div></div>`; }
   function wireYearPicker(id) { const el = $('#' + id); if (el) el.onchange = () => selectYear(el.value); }
   function defaultMonth() {
     const t = new Date(), key = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
@@ -468,7 +470,7 @@
     setMain(`
       <div class="toolbar">
         <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}</div></div>
-        <div style="flex:1"></div>${yearPicker('dash-year')}
+        <div style="flex:1"></div>${yearLabel()}
       </div>
       <div class="grid kpis">
         <div class="kpi"><div class="label">Class days</div><div class="value">${fmt(d.totals.days)}</div><div class="hint">${fmtDate(year().start)} – ${fmtDate(year().end)}</div></div>
@@ -510,7 +512,6 @@
         }
       });
     }
-    wireYearPicker('dash-year');
     if (att.length) attendanceChart($('#c-att'), att);
     if (facList.length) facultyChart($('#c-fac'), facList);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
@@ -897,13 +898,12 @@
     if (!d) return;
     setMain(`
       <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · academic year ${esc(year().id)} · hover a date for details${isAdmin() ? ' · edit this year’s holidays and events below the calendar' : ''}</div></div>
-        <div style="flex:1"></div>${yearPicker('cal-year')}<button class="btn primary" type="button" id="cal-share" title="Save the calendar as a picture, or share it straight to WhatsApp from a phone">Share / save as image</button><button class="btn" type="button" onclick="window.DrpCalendar.fitForPrint(); window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
+        <div style="flex:1"></div>${yearLabel()}<button class="btn primary" type="button" id="cal-share" title="Save the calendar as a picture, or share it straight to WhatsApp from a phone">Share / save as image</button><button class="btn" type="button" onclick="window.DrpCalendar.fitForPrint(); window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
       ${window.DrpCalendar.render(d, { today: todayDs() })}
       ${isAdmin() ? `<div class="no-print" style="margin-top:18px">
         <details class="sect" id="cal-hol"><summary>This year’s RCC holidays<span class="sect-hint">${d.holidays.filter((h) => h.date >= year().start && h.date <= year().end).length} in ${esc(year().id)}</span></summary><div class="sect-body"></div></details>
         <details class="sect" id="cal-ev"><summary>This year’s academic events<span class="sect-hint">${d.events.length} in the key</span></summary><div class="sect-body"></div></details>
       </div>` : ''}`);
-    wireYearPicker('cal-year');
     $('#cal-share').onclick = async (e) => {
       const btn = e.currentTarget, label = btn.textContent;
       btn.disabled = true; btn.textContent = 'Preparing image…';

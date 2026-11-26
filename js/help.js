@@ -31,8 +31,8 @@
       assignments are rated 1–5 stars, as in the old sheet. Admins click a row to enter marks, or <b>Edit</b> to change the details.</p>`],
     ['Academic years', `<p>Everything in DRP Manager belongs to an academic year (e.g. 2025-2026): the class log, attendance, students,
       exams, class tests, assignments, the calendar's events and the monthly-report log. The <b>current</b> year is shown by default every time
-      DRP Manager is opened; switch to another year with the <b>Academic year</b> selector on the Dashboard, the Calendar or in Settings
-      (the year shown is also in the badge at the top right). Students always see their own year.</p>
+      DRP Manager is opened; switch to another year in <b>Settings › Academic year</b> (the only place it is changed; the year
+      shown is on the Dashboard, the Calendar and in the badge at the top right). Students always see their own year.</p>
       <p><b>Starting a new year (admin):</b> Settings › Academic year › add a row (e.g. 2026-2027, first and last month) and save; choose the
       new year; on the Calendar page open <i>This year's academic events</i> and click <i>Copy … events</i> (dates move forward one year), then
       adjust them; open <i>This year's RCC holidays</i> and enter the holidays from RCC's holiday calendar for that year; add the new students
