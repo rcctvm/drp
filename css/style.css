@@ -372,7 +372,8 @@ table.acal-month td[title] { cursor: help; }
   /* Academic calendar: printed exactly as on screen (same layout and colours), on ONE page, scaled to fit A3
      portrait (A3 keeps every label readable). Uses its own named page so other reports keep A4 landscape. */
   @page calendar { size: A3 portrait; margin: 6mm; }
-  .acal { page: calendar; width: 1180px; max-width: none; margin: 0; zoom: 0.89; break-inside: auto; }
+  .acal { page: calendar; width: 1180px; max-width: none; margin: 0; zoom: var(--print-zoom, 0.89); break-inside: auto; break-after: avoid; }
+  body.view-calendar main > :not(.acal) { display: none !important; }
   .acal, .acal * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body.view-calendar main { padding: 0; }
   body.view-calendar .app-footer { display: none !important; }
@@ -394,3 +395,13 @@ table.acal-month td.painted { color: var(--ink, #000) !important; }
 .tag.kind-exam { color: #00262c; background: #FFFF00; border-color: #FFFF00; }
 .tag.kind-other { color: var(--text); }
 b.ok-num { color: var(--ok); }
+
+/* Layout used to measure the calendar for printing (same as the print layout, on any screen). */
+.acal.acal-measure { width: 1180px !important; max-width: none !important; }
+.acal.acal-measure .acal-grid { grid-template-columns: repeat(4, 1fr) !important; }
+.acal.acal-measure .acal-key { grid-template-columns: 1.15fr 1.15fr .8fr !important; }
+.acal.acal-measure .acal-hols { grid-template-columns: 1fr 1fr !important; }
+.acal.acal-measure .acal-head { flex-direction: row !important; }
+.acal-hols tr.pad td { color: transparent; }
+/* While the calendar is turned into an image: no hover outline / today ring artefacts */
+.acal.acal-snap td.today { outline: none; }

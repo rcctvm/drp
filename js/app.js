@@ -897,13 +897,22 @@
     if (!d) return;
     setMain(`
       <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · academic year ${esc(year().id)} · hover a date for details${isAdmin() ? ' · edit this year’s holidays and events below the calendar' : ''}</div></div>
-        <div style="flex:1"></div>${yearPicker('cal-year')}<button class="btn" type="button" onclick="window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
+        <div style="flex:1"></div>${yearPicker('cal-year')}<button class="btn primary" type="button" id="cal-share" title="Save the calendar as a picture, or share it straight to WhatsApp from a phone">Share / save as image</button><button class="btn" type="button" onclick="window.DrpCalendar.fitForPrint(); window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
       ${window.DrpCalendar.render(d, { today: todayDs() })}
       ${isAdmin() ? `<div class="no-print" style="margin-top:18px">
         <details class="sect" id="cal-hol"><summary>This year’s RCC holidays<span class="sect-hint">${d.holidays.filter((h) => h.date >= year().start && h.date <= year().end).length} in ${esc(year().id)}</span></summary><div class="sect-body"></div></details>
         <details class="sect" id="cal-ev"><summary>This year’s academic events<span class="sect-hint">${d.events.length} in the key</span></summary><div class="sect-body"></div></details>
       </div>` : ''}`);
     wireYearPicker('cal-year');
+    $('#cal-share').onclick = async (e) => {
+      const btn = e.currentTarget, label = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Preparing image…';
+      try {
+        const how = await window.DrpCalendar.shareImage($('.acal'), `DRP-Academic-Calendar-${year().id}.png`, `DRP academic calendar ${year().id}`);
+        if (how === 'downloaded') toast('Calendar saved as an image (PNG). Attach it in WhatsApp.');
+      } catch (err) { toast(err.message || 'Could not create the image.', true); }
+      finally { btn.disabled = false; btn.textContent = label; }
+    };
     if (!isAdmin()) return;
     const reload = () => { viewCalendar(); };
     const loadMaster = () => guarded(() => API.call('masterData'));

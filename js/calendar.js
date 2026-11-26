@@ -69,11 +69,18 @@
 
     // HOLIDAYS tables, one column per calendar year of the batch.
     const years = [...new Set(d.months.map((m) => m.year))];
+    // Both year columns get the same number of rows per section (blank rows pad the shorter list),
+    // so CLOSED and COMPENSATORY HOLIDAYS start on the same line side by side, as in the printed calendar.
+    const listOf = (year, type) => d.holidays.filter((h) => h.date.startsWith(year + '-') && h.type === type);
+    const rowsFor = (type) => Math.max(1, ...years.map((y) => listOf(y, type).length));
     const holTable = (year, type) => {
-      const list = d.holidays.filter((h) => h.date.startsWith(year + '-') && h.type === type);
+      const list = listOf(year, type), n = rowsFor(type);
+      const filled = list.map((h, i) => `<tr><td>${i + 1}</td><td>${short(h.date)}</td><td>${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][parse(h.date).getDay()]}</td><td>${esc(h.name)}</td></tr>`);
+      if (!list.length) filled.push('<tr><td colspan="4" class="none">None entered</td></tr>');
+      while (filled.length < n) filled.push('<tr class="pad"><td>&nbsp;</td><td></td><td></td><td></td></tr>');
       return `<tr class="hsect"><th colspan="4">${type === 'Closed' ? 'CLOSED HOLIDAYS' : 'COMPENSATORY HOLIDAYS'}</th></tr>
         <tr class="hhead"><th>#</th><th>Date</th><th>Day</th><th>HOLIDAY NAME</th></tr>
-        ${list.map((h, i) => `<tr><td>${i + 1}</td><td>${short(h.date)}</td><td>${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][parse(h.date).getDay()]}</td><td>${esc(h.name)}</td></tr>`).join('') || '<tr><td colspan="4" class="none">None entered</td></tr>'}`;
+        ${filled.join('')}`;
     };
 
     return `<div class="acal">
@@ -94,5 +101,64 @@
     </div>`;
   }
 
-  window.DrpCalendar = { render };
+  /**
+   * Printing: scale the calendar so ALL of it (months, key and holiday tables) fits ONE A3 portrait
+   * page. Measured just before printing in the print layout (4 months per row, 1180 px wide).
+   */
+  const A3 = { widthPx: (297 - 12) / 25.4 * 96, heightPx: (420 - 12) / 25.4 * 96 };   // 6 mm margins
+  function fitForPrint() {
+    document.querySelectorAll('.acal').forEach((el) => {
+      el.classList.add('acal-measure');
+      const w = el.offsetWidth, h = el.offsetHeight;
+      el.classList.remove('acal-measure');
+      const zoom = Math.min(A3.widthPx / w, (A3.heightPx - 8) / h);
+      el.style.setProperty('--print-zoom', String(Math.max(0.3, Math.floor(zoom * 1000) / 1000)));
+    });
+  }
+  window.addEventListener('beforeprint', fitForPrint);
+  if (window.matchMedia) {
+    const mq = window.matchMedia('print');
+    if (mq.addEventListener) mq.addEventListener('change', (e) => { if (e.matches) fitForPrint(); });
+  }
+
+  /**
+   * Share / save the calendar as a PNG image (e.g. for WhatsApp). On phones and tablets the system
+   * share sheet opens with the image; elsewhere the PNG is downloaded. The image is drawn in the
+   * print layout (4 months per row) at 2x resolution, whatever the screen size.
+   */
+  const H2C = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  function loadHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    return new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = H2C; sc.async = true;
+      sc.onload = () => resolve(window.html2canvas);
+      sc.onerror = () => reject(new Error('Could not load the image tool. Check the internet connection.'));
+      document.head.appendChild(sc);
+    });
+  }
+  async function toImage(el) {
+    const h2c = await loadHtml2Canvas();
+    el.classList.add('acal-measure', 'acal-snap');
+    try {
+      const canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
+        windowWidth: Math.max(document.documentElement.clientWidth, 1240) });
+      return await new Promise((res) => canvas.toBlob(res, 'image/png'));
+    } finally { el.classList.remove('acal-measure', 'acal-snap'); }
+  }
+  async function shareImage(el, fileName, title) {
+    const blob = await toImage(el);
+    const file = new File([blob], fileName, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+      try { await navigator.share({ files: [file], title, text: title }); return 'shared'; }
+      catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return 'downloaded';
+  }
+
+  window.DrpCalendar = { render, fitForPrint, shareImage, toImage };
 })();
