@@ -10,7 +10,7 @@
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const COLORS = ['#00ffff', '#ffff00', '#e5173f', '#3ddc84', '#ff9f40', '#b48cff', '#ff6fd8', '#7fb7ff', '#c0ff6f'];
-  const ATT_CYCLE = ['P', 'A', 'L', ''];
+  const ATT_CYCLE = ['P', 'A', ''];   // present, absent, not marked (as in the legacy sheets)
 
   const state = { role: null, cfg: null, charts: [], seq: 0, program: 'DRP1' };
   const isAdmin = () => state.role === 'admin';
@@ -700,7 +700,7 @@
     const today = todayDs();
     setMain(`
       <div class="toolbar">
-        <div><h1>Attendance</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year} · P present, A absent, L leave${isAdmin() ? ' · click a cell to change it, then Save' : ''}</div></div>
+        <div><h1>Attendance</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year} · P present, A absent${isAdmin() ? ' · click a cell to change it, then Save' : ''}</div></div>
         <div style="flex:1"></div>
         ${monthPicker('att-month', d.year, d.monthNo)}
         ${isAdmin() ? `<button class="btn" type="button" id="att-fill">Mark class days present</button>
@@ -708,12 +708,12 @@
         <button class="btn" type="button" onclick="window.print()">Print</button>
       </div>
       <div class="table-wrap"><table class="att-grid">
-        <colgroup><col class="c-name">${d.days.map(() => '<col>').join('')}<col class="c-n"><col class="c-n"><col class="c-n"><col class="c-pct"><col class="c-pct"></colgroup>
+        <colgroup><col class="c-name">${d.days.map(() => '<col>').join('')}<col class="c-n"><col class="c-n"><col class="c-pct"><col class="c-pct"></colgroup>
         <thead><tr><th>Student</th>${d.days.map((x) => `<th class="day ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')}" title="${esc(x.holiday ? x.holiday.name : '')}">${parseDs(x.date).getDate()}<br>${DOW[x.dow].slice(0, 2)}</th>`).join('')}
-          <th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num" title="This month">Month</th><th class="num" title="Whole batch so far">Overall</th></tr></thead>
+          <th class="num">P</th><th class="num">A</th><th class="num" title="This month">Month</th><th class="num" title="Whole batch so far">Overall</th></tr></thead>
         <tbody>${d.students.map((s) => `<tr data-sid="${esc(s.id)}"><td class="tech">${esc(s.name)}</td>
           ${d.days.map((x) => { const v = s.marks[x.date] || ''; return `<td class="mark m-${v} ${isAdmin() ? 'editable' : ''} ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')} ${x.date === today ? 'today' : ''}" data-date="${x.date}" title="${fmtDate(x.date)}${x.classDay ? ' · class day' : ''}">${v}</td>`; }).join('')}
-          <td class="num">${s.month.P}</td><td class="num">${s.month.A}</td><td class="num">${s.month.L}</td><td class="num">${pct(s.month.pct)}</td><td class="num grand">${pct(s.overall.pct)}</td></tr>`).join('') || `<tr><td colspan="${d.days.length + 6}" class="empty">No students.</td></tr>`}
+          <td class="num">${s.month.P}</td><td class="num">${s.month.A}</td><td class="num">${pct(s.month.pct)}</td><td class="num grand">${pct(s.overall.pct)}</td></tr>`).join('') || `<tr><td colspan="${d.days.length + 5}" class="empty">No students.</td></tr>`}
         </tbody>
       </table></div>
       <p class="note">Shaded columns: Sundays and RCC holidays. Days with a logged class are marked “class day” in the tooltip.</p>
@@ -1060,8 +1060,8 @@
         <div class="kpi"><div class="label">Holidays</div><div class="value">${d.holidays.length}</div><div class="hint">${d.holidays.map((h) => esc(h.name)).join(', ')}</div></div>
       </div>
       <div class="panel print-block" style="margin-top:16px"><h2>Attendance</h2><div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Student</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num">%</th></tr></thead>
-        <tbody>${d.attendance.map((x, i) => `<tr><td>${i + 1}</td><td class="tech">${esc(x.name)}</td><td class="num">${x.total}</td><td class="num">${x.P}</td><td class="num">${x.A}</td><td class="num">${x.L}</td><td class="num grand">${pct(x.pct)}</td></tr>`).join('')}</tbody></table></div></div>
+        <thead><tr><th>#</th><th>Student</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">%</th></tr></thead>
+        <tbody>${d.attendance.map((x, i) => `<tr><td>${i + 1}</td><td class="tech">${esc(x.name)}</td><td class="num">${x.total}</td><td class="num">${x.P}</td><td class="num">${x.A}</td><td class="num grand">${pct(x.pct)}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="grid two">
         <div class="panel print-block"><h2>Topics covered</h2><div class="table-wrap"><table class="fit">
           <thead><tr><th>Topic</th><th class="num" style="width:70px">Sessions</th><th class="num" style="width:70px">Hours</th></tr></thead>
@@ -1093,7 +1093,7 @@
         <button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
       <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Report card — ${esc(st.name)}</h2><div>${esc(st.program)} · Batch ${esc(st.batch)}</div></div>
       <div class="grid kpis print-block">
-        <div class="kpi"><div class="label">Attendance</div><div class="value">${pct(d.attendance.overall.pct)}</div><div class="hint">${d.attendance.overall.P} present · ${d.attendance.overall.A} absent · ${d.attendance.overall.L} leave</div></div>
+        <div class="kpi"><div class="label">Attendance</div><div class="value">${pct(d.attendance.overall.pct)}</div><div class="hint">${d.attendance.overall.P} present · ${d.attendance.overall.A} absent</div></div>
         <div class="kpi"><div class="label">Days marked</div><div class="value">${d.attendance.overall.total}</div></div>
         <div class="kpi"><div class="label">Exam papers marked</div><div class="value">${d.exams.filter((e) => e.score != null).length}</div><div class="hint">of ${d.exams.length}</div></div>
         <div class="kpi"><div class="label">Assignments rated</div><div class="value">${d.assignments.filter((t) => t.score != null).length}</div><div class="hint">of ${d.assignments.length}</div></div>
@@ -1104,9 +1104,9 @@
           <tr><td class="code">Phone</td><td>${esc(st.phone)}</td></tr><tr><td class="code">Guardian</td><td>${esc(st.guardian)}</td></tr>
           <tr><td class="code">Address</td><td>${esc(st.address)}</td></tr></tbody></table></div>
         <div class="panel print-block"><h2>Attendance by month</h2><div class="table-wrap"><table>
-          <thead><tr><th>Month</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">L</th><th class="num">%</th></tr></thead>
-          <tbody>${d.attendance.months.map((m) => `<tr><td>${esc(m.label)}</td><td class="num">${m.total}</td><td class="num">${m.P}</td><td class="num">${m.A}</td><td class="num">${m.L}</td><td class="num">${pct(m.pct)}</td></tr>`).join('')}
-            <tr class="total"><td>Total</td><td class="num">${d.attendance.overall.total}</td><td class="num">${d.attendance.overall.P}</td><td class="num">${d.attendance.overall.A}</td><td class="num">${d.attendance.overall.L}</td><td class="num">${pct(d.attendance.overall.pct)}</td></tr></tbody></table></div></div>
+          <thead><tr><th>Month</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">%</th></tr></thead>
+          <tbody>${d.attendance.months.map((m) => `<tr><td>${esc(m.label)}</td><td class="num">${m.total}</td><td class="num">${m.P}</td><td class="num">${m.A}</td><td class="num">${pct(m.pct)}</td></tr>`).join('')}
+            <tr class="total"><td>Total</td><td class="num">${d.attendance.overall.total}</td><td class="num">${d.attendance.overall.P}</td><td class="num">${d.attendance.overall.A}</td><td class="num">${pct(d.attendance.overall.pct)}</td></tr></tbody></table></div></div>
       </div>
       ${series.map((sr) => { const rows = d.exams.filter((e) => e.series === sr); const got = rows.filter((e) => e.score != null);
         return `<div class="panel print-block"><h2>${esc(sr)}</h2><div class="table-wrap"><table class="fit">
