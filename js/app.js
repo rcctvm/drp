@@ -472,10 +472,17 @@
     const facList = (d.faculty || []).filter((f) => f.type !== 'Activity');
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + (x.pct || 0), 0) / att.filter((x) => x.pct != null).length || 0) / 10 : null;
     const papers = curPapers();
-    const paperRows = papers.map((p) => ({ label: p.short || p.code, minutes: d.paperMinutes[p.code] || 0 }));
+    // Yearly scheme: "1 PHYSICS", "2 MATHS", ... (paper number first, as in the legacy Monthly_Report), in paper order.
+    const paperRows = papers.slice().sort((a, b) => a.no - b.no).map((p) => ({ label: isSemester() ? (p.short || p.code) : `${p.no ? p.no + ' ' : ''}${p.short || p.code}`, minutes: d.paperMinutes[p.code] || 0 }));
     // Hours outside the papers (project work, training, exams, ...): listed under the chart, not as a bar.
     const other = d.otherMinutes || Object.fromEntries(['Other', 'Unassigned'].filter((k) => d.paperMinutes[k]).map((k) => [k === 'Unassigned' ? 'No topic' : k, d.paperMinutes[k]]));
-    const otherList = Object.entries(other).filter(([, m]) => m > 0).sort((a, b) => b[1] - a[1]);
+    // Activities (seminar, paper presentation, project work, training, exams, ...) follow the papers as their own
+    // bars, in a fixed order, each only when it has hours; drawn in grey to set them apart from the papers.
+    const ACT_ORDER = ['Seminar', 'Paper presentation', 'Project work', 'Training', 'Exams', 'Class tests', 'Online classes'];
+    const actRank = (k) => (k === 'No topic' ? 100 : ACT_ORDER.indexOf(k) >= 0 ? ACT_ORDER.indexOf(k) : 50);
+    Object.keys(other).filter((k) => other[k] > 0)
+      .sort((a, b) => actRank(a) - actRank(b) || a.localeCompare(b))
+      .forEach((k) => paperRows.push({ label: k.toUpperCase(), minutes: other[k], activity: true }));
     setMain(`
       <div class="toolbar">
         <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}</div></div>
@@ -491,8 +498,7 @@
       </div>
       <div class="grid two" style="margin-top:16px">
         <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
-        <div class="panel"><h2>Hours by paper</h2><div class="chart-box"><canvas id="c-papers"></canvas></div>
-          ${otherList.length ? `<p class="note" style="margin:8px 0 0">Not in a paper: ${otherList.map(([k, m]) => `${esc(k)} <b>${minToHM(m)}</b> h`).join(' · ')}</p>` : ''}</div>
+        <div class="panel"><h2>Hours by paper and activity</h2><div class="chart-box" style="height:${Math.max(300, 26 * paperRows.length + 60)}px"><canvas id="c-papers"></canvas></div></div>
       </div>
       <div class="grid two">
         <div class="panel chart-sheet"><h2>Attendance</h2>
@@ -538,7 +544,7 @@
     });
     chart($('#c-papers'), {
       type: 'bar',
-      data: { labels: paperRows.map((p) => p.label), datasets: [{ label: 'Hours', data: paperRows.map((p) => Math.round(p.minutes / 6) / 10), backgroundColor: paperRows.map((_, i) => COLORS[i % COLORS.length]), borderRadius: 3 }] },
+      data: { labels: paperRows.map((p) => p.label), datasets: [{ label: 'Hours', data: paperRows.map((p) => Math.round(p.minutes / 6) / 10), backgroundColor: paperRows.map((p, i) => (p.activity ? '#8fa3b3' : COLORS[i % COLORS.length])), borderRadius: 3 }] },
       options: { indexAxis: 'y', maintainAspectRatio: false, layout: { padding: { right: 36 } }, scales: { x: { beginAtZero: true, grace: '8%' } },
         plugins: { legend: { display: false }, barLabels: { mode: 'top' } } }
     });
