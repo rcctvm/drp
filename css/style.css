@@ -441,3 +441,13 @@ details.sem-sect > .sect-body > details.sect { margin-left: 0; }
 .storage-bar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
 .storage-bar i { display: block; height: 100%; }
 .storage-bar i.good { background: var(--ok, #3ddc84); } .storage-bar i.mid { background: #FF9900; } .storage-bar i.bad { background: #ff5a6e; }
+/* An expandable block that looks clickable: arrow + underlined label, arrow turns when open */
+details.more { margin-top: 10px; }
+details.more > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: 1px solid var(--cyan, #00ffff); border-radius: 8px; color: var(--cyan, #00ffff); font-weight: 600; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary:hover { background: rgba(0,255,255,.08); }
+details.more > summary .note { color: inherit; opacity: .75; font-weight: 400; }
+details.more .more-arrow { display: inline-block; font-size: 11px; transition: transform .15s; }
+details.more[open] .more-arrow { transform: rotate(90deg); }
+details.more[open] > summary { margin-bottom: 8px; }

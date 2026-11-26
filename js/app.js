@@ -1225,7 +1225,7 @@
     box.innerHTML = `<div class="storage-head"><b>Storage used:</b> ${fmt(st.used)} of ${fmt(st.limit)} cells <span class="storage-pct ${level}">${pct}%</span></div>
       <div class="storage-bar"><i class="${level}" style="width:${Math.min(100, Math.max(pct, 0.5))}%"></i></div>
       <p class="note">${pct >= 90 ? 'Nearly full: ask the developer to archive old years.' : pct >= 70 ? 'More than 70% used: plan to archive old years.' : 'Plenty of room.'} Each table counts its full size, including empty rows kept ready for new records.</p>
-      <details class="topic"><summary>By table</summary><div class="table-wrap"><table class="fit"><thead><tr><th>Table</th><th class="num">Records</th><th class="num">Cells</th><th class="num">Share</th></tr></thead>
+      <details class="more"><summary><span class="more-arrow">▶</span> Show storage by table <span class="note">(${st.tabs.length} tables · click to open)</span></summary><div class="table-wrap"><table class="fit"><thead><tr><th>Table</th><th class="num">Records</th><th class="num">Cells</th><th class="num">Share</th></tr></thead>
         <tbody>${st.tabs.slice().sort((a, b) => b.cells - a.cells).map((t) => `<tr><td>${esc(t.name)}</td><td class="num">${fmt(t.rows)}</td><td class="num">${fmt(t.cells)}</td><td class="num">${st.used ? Math.round(1000 * t.cells / st.used) / 10 : 0}%</td></tr>`).join('')}</tbody></table></div></details>`;
   }
   /** Settings › Import: one row per academic year, Import / Import all, with step-by-step progress. */
