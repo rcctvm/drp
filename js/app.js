@@ -1499,12 +1499,36 @@
       if (type === 'color') return `<input type="color" name="${name}" value="${esc(/^#[0-9a-f]{6}$/i.test(v) ? v : '#888888')}" ${aria} style="padding:2px;min-height:32px">`;
       return `<input name="${name}" value="${esc(v)}" ${aria}>`;
     };
+    // Students: filter by programme and academic year, sort by year. Hidden rows are kept and saved too.
+    const filtered = table === 'Students';
+    const view = state.studentView = state.studentView || { prog: '', year: '', order: 'desc' };
+    const shown = () => rows.map((r, i) => i)
+      .filter((i) => !filtered || ((!view.prog || rows[i].Program === view.prog || rows[i]._new) && (!view.year || rows[i].Batch === view.year || rows[i]._new)))
+      .sort((a, b) => (!filtered ? a - b : (view.order === 'asc' ? 1 : -1) * String(rows[a].Batch || '').localeCompare(String(rows[b].Batch || ''))
+        || String(rows[a].Program || '').localeCompare(String(rows[b].Program || '')) || (Number(rows[a].Order) || 0) - (Number(rows[b].Order) || 0) || a - b));
+    const filterBar = () => {
+      if (!filtered) return '';
+      const yrs = [...new Set(rows.map((r) => r.Batch).filter(Boolean))].sort().reverse();
+      const n = shown().length;
+      return `<div class="toolbar filter-bar">
+        <div class="field"><label for="sf-prog">Programme</label><select id="sf-prog"><option value="">All (DRP1 and DRP2)</option>${['DRP1', 'DRP2'].map((p) => `<option ${p === view.prog ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+        <div class="field"><label for="sf-year">Academic year</label><select id="sf-year"><option value="">All years</option>${yrs.map((y) => `<option ${y === view.year ? 'selected' : ''}>${esc(y)}</option>`).join('')}</select></div>
+        <div class="field"><label for="sf-order">Sort</label><select id="sf-order"><option value="desc" ${view.order === 'desc' ? 'selected' : ''}>Newest year first</option><option value="asc" ${view.order === 'asc' ? 'selected' : ''}>Oldest year first</option></select></div>
+        <button class="btn small" type="button" id="sf-all">View all</button>
+        <span class="note" style="align-self:center">${n} of ${rows.length} student(s)</span></div>`;
+    };
     const draw = () => {
-      box.innerHTML = `<p class="note">${esc(spec.hint)}</p>
+      box.innerHTML = `<p class="note">${esc(spec.hint)}</p>${filterBar()}
         <div class="table-wrap"><table class="edit"><thead><tr>${spec.cols.map((c) => `<th style="min-width:${c[2]}px">${esc(c[1])}</th>`).join('')}<th></th></tr></thead>
-        <tbody>${rows.map((r, i) => `<tr>${spec.cols.map((c) => `<td>${input(c, r[c[0]] ?? '', i)}</td>`).join('')}<td><button class="btn small danger" type="button" data-del="${i}" aria-label="Delete row ${i + 1}">✕</button></td></tr>`).join('')}</tbody></table></div>
+        <tbody>${shown().map((i) => { const r = rows[i]; return `<tr>${spec.cols.map((c) => `<td>${input(c, r[c[0]] ?? '', i)}</td>`).join('')}<td><button class="btn small danger" type="button" data-del="${i}" aria-label="Delete row ${i + 1}">✕</button></td></tr>`; }).join('')}</tbody></table></div>
         <div class="actions"><button class="btn" type="button" data-add>Add row</button><button class="btn primary" type="button" data-save>Save ${esc(spec.title.toLowerCase())}</button></div>`;
-      $('[data-add]', box).onclick = () => { collect(); rows.push({ _new: true }); draw(); };
+      if (filtered) {
+        const refilter = () => { collect(); view.prog = $('#sf-prog', box).value; view.year = $('#sf-year', box).value; view.order = $('#sf-order', box).value; draw(); };
+        ['#sf-prog', '#sf-year', '#sf-order'].forEach((id) => { $(id, box).onchange = refilter; });
+        $('#sf-all', box).onclick = () => { collect(); view.prog = ''; view.year = ''; draw(); };
+      }
+      // A new student starts in the programme and year being viewed.
+      $('[data-add]', box).onclick = () => { collect(); rows.push(filtered ? { _new: true, Program: view.prog || 'DRP1', Batch: view.year || state.batch, Active: true } : { _new: true }); draw(); };
       $$('[data-del]', box).forEach((b) => b.addEventListener('click', () => { collect(); rows.splice(Number(b.dataset.del), 1); draw(); }));
       $('[data-save]', box).onclick = async () => {
         collect();

@@ -467,3 +467,5 @@ details.checks-panel[open] .more-arrow { transform: rotate(90deg); }
 body.prog-DRP2 nav.tabs a.drp1-only { display: none !important; }
 .tag.class-tag { color: #00262c; background: #b48cff; border-color: #b48cff; }
 @media (max-width: 760px) { .prog-bar { order: 5; width: 100%; margin: 6px 0 0; } }
+.filter-bar { margin: 4px 0 8px; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.filter-bar .field select { min-width: 150px; }

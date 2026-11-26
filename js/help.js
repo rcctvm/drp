@@ -88,7 +88,7 @@
       <i>Reload data from the database</i> shows at once any change made directly in the database (otherwise it appears within 6 hours).
       <i>Trim empty rows and columns</i> frees unused space; records are never touched.</li>
       <li><b>Users</b> (admin): add admin, faculty and student accounts. Each faculty account is linked to one faculty member, and each student account to one student.</li>
-      <li><b>Students, Faculty, Papers, Topics, Holidays, Application settings</b> (admin): edit the lists. Changing a student's ID keeps their attendance, marks and account with them. Tick <i>Class leader</i> for one DRP2 student per class.</li>
+      <li><b>Students, Faculty, Papers, Topics, Holidays, Application settings</b> (admin): edit the lists. Changing a student's ID keeps their attendance, marks and account with them. Tick <i>Class leader</i> for one DRP2 student per class. In Students, filter by programme and academic year, sort by year, or <i>View all</i>; saving keeps the students that are filtered out.</li>
       <li><b>My account</b>: change your user name or password.</li></ul>`],
     ['Privacy', `<p>The website holds no data. Everything is stored in the DRP Manager database and served by the DRP Manager server after you sign in.
       Passwords are stored only as salted hashes. Five wrong passwords lock that user name for 15 minutes.</p>`]
