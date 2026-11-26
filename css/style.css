@@ -458,3 +458,12 @@ details.checks-panel .more-arrow { display: inline-block; font-size: 13px; trans
 details.checks-panel[open] .more-arrow { transform: rotate(90deg); }
 .chk-status { font-size: 14px; font-weight: 600; margin-left: auto; }
 .chk-status.ok { color: var(--ok, #3ddc84); } .chk-status.warn { color: var(--yellow, #ffff00); }
+/* DRP1 | DRP2 switch and DRP2 student selector (top bar) */
+.prog-bar { display: flex; align-items: center; gap: 8px; margin-right: 10px; }
+.prog-switch { display: inline-flex; flex-shrink: 0; border: 1px solid var(--cyan, #00ffff); border-radius: 8px; overflow: hidden; }
+.prog-switch button { min-width: 56px; white-space: nowrap; background: transparent; color: var(--cyan, #00ffff); border: 0; padding: 5px 12px; font-weight: 700; cursor: pointer; font: inherit; font-weight: 700; }
+.prog-switch button.on { background: var(--cyan, #00ffff); color: #00262c; }
+.d2-student { min-width: 170px; max-width: 220px; padding: 5px 8px; }
+body.prog-DRP2 nav.tabs a.drp1-only { display: none !important; }
+.tag.class-tag { color: #00262c; background: #b48cff; border-color: #b48cff; }
+@media (max-width: 760px) { .prog-bar { order: 5; width: 100%; margin: 6px 0 0; } }

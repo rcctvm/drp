@@ -14,6 +14,9 @@
 
   const state = { role: null, cfg: null, charts: [], seq: 0, program: 'DRP1' };
   const isAdmin = () => state.role === 'admin';
+  const isLeader = () => !!(state.cfg && state.cfg.me && state.cfg.me.leader);
+  // DRP2 students log their own activities; the class leader also the class's common ones.
+  const canLog = () => isAdmin() || (state.program === 'DRP2' && state.role === 'student');
   // Admins and faculty see every student's records; only admins edit.
   const seesAll = () => state.role === 'admin' || state.role === 'faculty';
 
@@ -45,7 +48,7 @@
    * background when it is opened (and the common ones right away), instead of a blank "Loading…". */
   function stalePages() { cache.forEach((v) => { v.at = 0; }); setTimeout(prefetch, 50); }
   API.onVersionChange(() => stalePages());
-  const pageKey = (action, params) => action + '@' + (state.batch || '') + JSON.stringify(params);
+  const pageKey = (action, params) => action + '@' + (state.batch || '') + (state.program === 'DRP2' ? '|' + (state.student || '') : '') + JSON.stringify(params);
 
   /** Loads the pages people open most, in ONE request, right after sign-in. */
   async function prefetch() {
@@ -163,7 +166,14 @@
   /** Academic years from the server: [{ id, start, end, current, months }]. */
   const years = () => state.cfg.years || [];
   const year = () => years().find((y) => y.id === state.batch) || years().find((y) => y.current) || { id: state.cfg.settings.batch, start: state.cfg.settings.batchStart, end: state.cfg.settings.batchEnd, months: state.cfg.months || [] };
-  const batchMonths = () => year().months || [];
+  const batchMonths = () => {
+    const ms = (year().months || []).slice();
+    if (state.program === 'DRP2' && ms.length) {   // DRP2 runs to December of the second year
+      const l = ms[ms.length - 1], y = l.monthNo === 12 ? l.year + 1 : l.year, m = l.monthNo === 12 ? 1 : l.monthNo + 1;
+      ms.push({ year: y, monthNo: m, key: `${y}-${String(m).padStart(2, '0')}`, label: `${MONTHS[m - 1].slice(0, 3)} ${y}` });
+    }
+    return ms;
+  };
   /**
    * Chooses the academic year to show: the current year by default (also on every new visit);
    * a year picked in the year selector lasts until the browser is closed.
@@ -173,13 +183,62 @@
     try { pick = sessionStorage.getItem('drp.year'); } catch (e) {}
     const ok = (id) => years().some((y) => y.id === id);
     state.batch = ok(pick) ? pick : (state.cfg.currentYear || (years()[0] || {}).id || '');
-    API.setExtra({ batch: state.batch });
+    initProgram();
+  }
+  /**
+   * Programme shown: a student always sees their own (DRP1 or DRP2); admins and faculty switch with the
+   * DRP1 | DRP2 buttons at the top. DRP2 is per student, so staff also choose the student.
+   */
+  function initProgram() {
+    const me = state.cfg.me || {};
+    let p = me.program;
+    if (!p) { try { p = localStorage.getItem('drp.program'); } catch (e) {} }
+    state.program = p === 'DRP2' ? 'DRP2' : 'DRP1';
+    pickStudent();
+  }
+  function pickStudent() {
+    const me = state.cfg.me || {};
+    if (state.program !== 'DRP2') state.student = '';
+    else if (me.studentId && !seesAll()) state.student = me.studentId;
+    else {
+      let want = state.student;
+      try { want = want || sessionStorage.getItem('drp.d2student'); } catch (e) {}
+      const list = students();
+      state.student = list.some((s) => s.id === want) ? want : ((list[0] || {}).id || '');
+    }
+    API.setExtra({ batch: state.batch, program: state.program, student: state.student || '' });
+    document.body.classList.toggle('prog-DRP2', state.program === 'DRP2');
+    renderProgBar();
+  }
+  function renderProgBar() {
+    const bar = $('#prog-bar');
+    if (!bar) return;
+    if (!seesAll()) { bar.hidden = true; return; }
+    const list = students();
+    bar.hidden = false;
+    bar.innerHTML = `<div class="prog-switch" role="group" aria-label="Programme">${['DRP1', 'DRP2'].map((p) =>
+      `<button type="button" class="${p === state.program ? 'on' : ''}" data-prog="${p}">${p}</button>`).join('')}</div>
+      ${state.program === 'DRP2' ? `<select id="d2-student" class="d2-student" aria-label="DRP2 student">${list.length
+        ? list.map((s) => `<option value="${esc(s.id)}" ${s.id === state.student ? 'selected' : ''}>${esc(s.name)}${s.leader ? ' (class leader)' : ''}</option>`).join('')
+        : '<option value="">No DRP2 students this year</option>'}</select>` : ''}`;
+    $$('[data-prog]', bar).forEach((b) => b.addEventListener('click', () => switchProgram(b.dataset.prog)));
+    const sel = $('#d2-student', bar);
+    if (sel) sel.onchange = () => { state.student = sel.value; try { sessionStorage.setItem('drp.d2student', sel.value); } catch (e) {} pickStudent(); route(); setTimeout(prefetch, 50); };
+  }
+  function switchProgram(p) {
+    if (p === state.program) return;
+    state.program = p;
+    try { localStorage.setItem('drp.program', p); } catch (e) {}
+    pickStudent();
+    const name = (location.hash.split('/')[1] || 'dashboard');
+    if (p === 'DRP2' && ['syllabus', 'exams', 'tests', 'assignments'].includes(name)) location.hash = '#/dashboard'; else route();
+    setTimeout(prefetch, 50);
   }
   function selectYear(id) {
     if (!years().some((y) => y.id === id) || id === state.batch) return;
     state.batch = id;
     try { sessionStorage.setItem('drp.year', id); } catch (e) {}
-    API.setExtra({ batch: id });
+    pickStudent();
     renderBadge();
     route();
     setTimeout(prefetch, 50);
@@ -237,6 +296,7 @@
       byPaper[p].map((t) => `<option value="${esc(t.code)}" ${t.code === sel ? 'selected' : ''}>(${esc(t.code)}) ${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
   };
   const students = () => (state.cfg.students[state.program] || []).filter((s) => !s.batch || s.batch === state.batch);
+  const studentName = () => (students().find((s) => s.id === state.student) || {}).name || '';
 
   function destroyCharts() { state.charts.forEach((c) => c.destroy()); state.charts = []; }
   function chart(canvas, config) {
@@ -409,7 +469,7 @@
   }
   function renderBadge() {
     const me = state.cfg.me || {};
-    $('#role-badge').textContent = (isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · ${state.role === 'faculty' ? 'faculty' : 'student'}`) + (state.batch ? ` · ${state.batch}` : '');
+    $('#role-badge').textContent = (isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · ${state.role === 'faculty' ? 'faculty' : (me.leader ? 'class leader' : 'student')}`) + (state.batch ? ` · ${state.batch}` : '');
     $('#role-badge').title = 'Academic year shown: ' + (state.batch || '') + '. Change it in Settings.';
   }
   /** "updated 25 Nov 2026, 18:42 (dd9313c)" — stamped on every website publish (js/build.js). */
@@ -479,7 +539,9 @@
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + (x.pct || 0), 0) / att.filter((x) => x.pct != null).length || 0) / 10 : null;
     const papers = curPapers();
     // Yearly scheme: "1 PHYSICS", "2 MATHS", ... (paper number first, as in the legacy Monthly_Report), in paper order.
-    const paperRows = papers.slice().sort((a, b) => a.no - b.no).map((p) => ({ label: isSemester() ? (p.short || p.code) : `${p.no ? p.no + ' ' : ''}${p.short || p.code}`, minutes: d.paperMinutes[p.code] || 0 }));
+    const drp2 = state.program === 'DRP2';
+    const paperRows = papers.slice().sort((a, b) => a.no - b.no).map((p) => ({ label: isSemester() || drp2 ? (p.short || p.code) : `${p.no ? p.no + ' ' : ''}${p.short || p.code}`, minutes: d.paperMinutes[p.code] || 0 }))
+      .filter((r) => !drp2 || r.minutes > 0);   // DRP2: only the clinical areas this student worked in
     // Hours outside the papers (project work, training, exams, ...): listed under the chart, not as a bar.
     const other = d.otherMinutes || Object.fromEntries(['Other', 'Unassigned'].filter((k) => d.paperMinutes[k]).map((k) => [k === 'Unassigned' ? 'No topic' : k, d.paperMinutes[k]]));
     // Activities (seminar, paper presentation, project work, training, exams, ...) follow the papers as their own
@@ -491,16 +553,16 @@
       .forEach((k) => paperRows.push({ label: k.toUpperCase(), minutes: other[k], activity: true }));
     setMain(`
       <div class="toolbar">
-        <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${esc(s.welcome)}</div></div>
+        <div><h1>${esc(state.program)} dashboard</h1><div class="sub">${state.program === 'DRP2' ? `<b>${esc(studentName() || 'No DRP2 student selected')}</b> · clinical training and internship` : esc(s.welcome)}</div></div>
         <div style="flex:1"></div>${yearLabel()}
       </div>
       <div class="grid kpis">
-        <div class="kpi"><div class="label">Class days</div><div class="value">${fmt(d.totals.days)}</div><div class="hint">${fmtDate(year().start)} – ${fmtDate(year().end)}</div></div>
-        <div class="kpi"><div class="label">Teaching hours</div><div class="value">${minToHM(d.totals.minutes)}</div><div class="hint">hours:minutes · target ${fmt(d.targets.theory)} theory</div></div>
+        <div class="kpi"><div class="label">${drp2 ? 'Days with activities' : 'Class days'}</div><div class="value">${fmt(d.totals.days)}</div><div class="hint">${periodLabel()}</div></div>
+        <div class="kpi"><div class="label">${drp2 ? 'Hours' : 'Teaching hours'}</div><div class="value">${minToHM(d.totals.minutes)}</div><div class="hint">hours:minutes${drp2 ? '' : ` · target ${fmt(d.targets.theory)} theory`}</div></div>
         <div class="kpi"><div class="label">Sessions logged</div><div class="value">${fmt(d.totals.sessions)}</div></div>
-        <div class="kpi"><div class="label">Syllabus topics taught</div><div class="value">${fmt(d.topicsCovered)}<small style="font-size:16px;color:var(--muted)"> / ${fmt(d.topicsTotal)}</small></div></div>
-        <div class="kpi"><div class="label">${seesAll() ? 'Average attendance' : 'My attendance'}</div><div class="value">${pct(seesAll() ? avg : (att[0] ? att[0].pct : null))}</div>
-          <div class="hint">${seesAll() ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
+        <div class="kpi"><div class="label">${drp2 ? 'Topics covered' : 'Syllabus topics taught'}</div><div class="value">${fmt(d.topicsCovered)}${drp2 ? '' : `<small style="font-size:16px;color:var(--muted)"> / ${fmt(d.topicsTotal)}</small>`}</div></div>
+        <div class="kpi"><div class="label">${drp2 && seesAll() ? 'Attendance' : seesAll() ? 'Average attendance' : 'My attendance'}</div><div class="value">${pct(seesAll() ? avg : (att[0] ? att[0].pct : null))}</div>
+          <div class="hint">${seesAll() && !drp2 ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
       </div>
       <div class="grid two" style="margin-top:16px">
         <div class="panel"><div class="chart-head"><h2>Teaching hours per month</h2>${totalBadge(`<b>${minToHM(d.totals.minutes)}</b> h · <b>${d.totals.days}</b> class days`, 'Total for the academic year')}</div><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
@@ -558,6 +620,13 @@
     });
   }
 
+  /** "1 Oct 2024 – 31 Dec 2025": the months shown for the programme (DRP2 runs to December). */
+  function periodLabel() {
+    const ms = batchMonths();
+    if (!ms.length) return `${fmtDate(year().start)} – ${fmtDate(year().end)}`;
+    const a = ms[0], z = ms[ms.length - 1], last = new Date(z.year, z.monthNo, 0).getDate();
+    return `${fmtDate(`${a.year}-${String(a.monthNo).padStart(2, '0')}-01`)} – ${fmtDate(`${z.year}-${String(z.monthNo).padStart(2, '0')}-${last}`)}`;
+  }
   /** Total shown in the top-right corner of a chart. */
   function totalBadge(html, title) { return `<div class="chart-total" title="${esc(title || '')}">Total ${html}</div>`; }
   /** Top-right of the Working vs Productive chart: the year's totals and productive days as % of working days. */
@@ -608,24 +677,26 @@
     const slots = state.cfg.slots || 7;
     // Columns shown: the sessions used this month (at least 3 for an admin), plus any the admin added
     // with "+ Add session" (up to the 7 hours of the Weekly Time Table).
-    const usedSlots = Math.max(2, ...d.sessions.map((s) => s.slot), isAdmin() ? 3 : 1);
+    const usedSlots = Math.max(2, ...d.sessions.map((s) => s.slot), canLog() ? 3 : 1);
     const showSlots = Math.min(slots, Math.max(usedSlots, state.logSlots || 0));
-    const addBtn = isAdmin() && showSlots < slots
+    const addBtn = canLog() && showSlots < slots
       ? `<th class="add-ses no-print"><button class="btn small" type="button" id="log-more" title="Show one more session column (up to ${slots} a day)">+ Add session</button></th>` : '';
     const today = todayDs();
     const cell = (day, k) => {
       const s = bySlot[day.date + '|' + k];
-      const cls = ['ses', isAdmin() ? 'editable' : '', day.holiday ? 'hol' : (day.dow === 0 ? 'off' : '')].join(' ');
-      if (!s) return `<td class="${cls}" data-date="${day.date}" data-slot="${k}">${isAdmin() ? '<span class="empty-slot">+</span>' : ''}</td>`;
+      // A common DRP2 activity (whole class) is changed only by an admin or the class leader.
+      const mayEdit = canLog() && (!s || !s.common || isAdmin() || isLeader());
+      const cls = ['ses', mayEdit ? 'editable' : '', day.holiday ? 'hol' : (day.dow === 0 ? 'off' : '')].join(' ');
+      if (!s) return `<td class="${cls}" data-date="${day.date}" data-slot="${k}">${mayEdit ? '<span class="empty-slot">+</span>' : ''}</td>`;
       return `<td class="${cls}" data-date="${day.date}" data-slot="${k}" data-id="${esc(s.id)}">
         ${s.start || s.end ? `<div class="t">${fmtTime(s.start)}–${fmtTime(s.end)}${s.minutes ? ` · ${minToHM(s.minutes)}` : ''}</div>` : ''}
-        <div class="tp">${s.kind && s.kind !== 'Lecture' ? `<span class="tag kind-${esc(s.kind.toLowerCase())}">${esc(s.kind)}</span> ` : ''}${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
+        <div class="tp">${s.common ? '<span class="tag class-tag" title="Common activity of the whole class">Class</span> ' : ''}${s.kind && s.kind !== 'Lecture' ? `<span class="tag kind-${esc(s.kind.toLowerCase())}">${esc(s.kind)}</span> ` : ''}${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
         ${s.faculty.length ? `<div class="fc">${esc(s.faculty.map((f) => f.name).join(', '))}</div>` : ''}
         ${s.remarks ? `<div class="note">${esc(s.remarks)}</div>` : ''}</td>`;
     };
     setMain(`
       <div class="toolbar">
-        <div><h1>Class log</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year}: <b>${d.totals.days}</b> class days, <b>${minToHM(d.totals.minutes)}</b> hours${isAdmin() ? ' · click a cell to add or edit a session' : ''}</div></div>
+        <div><h1>Class log</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year}: <b>${d.totals.days}</b> class days, <b>${minToHM(d.totals.minutes)}</b> hours${state.program === 'DRP2' ? ` · ${esc(studentName())}` : ''}${canLog() ? ' · click a cell to add or edit a session' : ''}</div></div>
         <div style="flex:1"></div>
         ${monthPicker('log-month', d.year, d.monthNo)}
         <button class="btn" type="button" onclick="window.print()">Print</button>
@@ -640,7 +711,7 @@
       </table></div>
       `);
     wireMonthPicker('log-month', '#/log');
-    if (!isAdmin()) return;
+    if (!canLog()) return;
     const more = $('#log-more');
     if (more) more.onclick = (e) => { e.preventDefault(); state.logSlots = showSlots + 1; viewLog(year, monthNo); };
     $$('.log-grid td.ses.editable').forEach((td) => td.addEventListener('click', () => {
@@ -669,14 +740,17 @@
       </div>
       <div class="field" style="margin-top:12px"><label>Faculty / activity (choose one or more)</label>
         <div class="check-list">${fac.map((f) => `<label><input type="checkbox" name="fac" value="${esc(f.abbr)}" ${chosen.has(f.abbr) ? 'checked' : ''}> (${esc(f.abbr)}) ${esc(f.name)}</label>`).join('')}</div></div>
-      <div class="field" style="margin-top:12px"><label for="s-remarks">Remarks (optional)</label><input id="s-remarks" name="remarks" maxlength="500" value="${esc(s.remarks || '')}"></div>`;
+      <div class="field" style="margin-top:12px"><label for="s-remarks">Remarks (optional)</label><input id="s-remarks" name="remarks" maxlength="500" value="${esc(s.remarks || '')}"></div>
+      ${state.program === 'DRP2' && (isAdmin() || isLeader()) ? `<label class="switch-row" style="margin-top:12px"><input type="checkbox" name="common" ${s.common ? 'checked' : ''}>
+        Common activity of the whole class (seminar, paper presentation, …): shown in every student's class log</label>` : ''}`;
     formDialog({
       title: s.id ? 'Edit session' : 'Add session', body,
       onSave: async (f) => {
         const session = {
           id: s.id, program: state.program, date: f.date.value, slot: Number(f.slot.value), start: f.start.value, end: f.end.value,
           topicCode: f.topicCode.value, topic: s.topicCode ? '' : (s.topic || ''), faculty: $$('input[name=fac]:checked', f).map((x) => x.value), remarks: f.remarks.value,
-          kind: f.kind ? f.kind.value : (s.kind || '')
+          kind: f.kind ? f.kind.value : (s.kind || ''),
+          common: f.common ? f.common.checked : !!s.common
         };
         const res = await write('saveSession', { session });
         if (res) { toast('Session saved.'); done(); return true; }
@@ -696,14 +770,15 @@
     year = Number(year) || dm.year; monthNo = Number(monthNo) || dm.monthNo;
     const d = await cachedLoad('attendance', { program: state.program, year, month: monthNo }, () => viewAttendance(year, monthNo));
     if (!d) return;
+    const canMark = isAdmin() || !!d.canMark;   // admins; in DRP2 also the class leader
     const pending = new Map();   // "date|studentId" -> status
     const today = todayDs();
     setMain(`
       <div class="toolbar">
-        <div><h1>Attendance</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year} · P present, A absent${isAdmin() ? ' · click a cell to change it, then Save' : ''}</div></div>
+        <div><h1>Attendance</h1><div class="sub">${esc(state.program)} · ${MONTHS[d.monthNo - 1]} ${d.year} · P present, A absent${canMark ? ' · click a cell to change it, then Save' : ''}</div></div>
         <div style="flex:1"></div>
         ${monthPicker('att-month', d.year, d.monthNo)}
-        ${isAdmin() ? `<button class="btn" type="button" id="att-fill">Mark class days present</button>
+        ${canMark ? `<button class="btn" type="button" id="att-fill">Mark class days present</button>
           <button class="btn primary" type="button" id="att-save" disabled>Save</button>` : ''}
         <button class="btn" type="button" onclick="window.print()">Print</button>
       </div>
@@ -712,7 +787,7 @@
         <thead><tr><th>Student</th>${d.days.map((x) => `<th class="day ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')}" title="${esc(x.holiday ? x.holiday.name : '')}">${parseDs(x.date).getDate()}<br>${DOW[x.dow].slice(0, 2)}</th>`).join('')}
           <th class="num">P</th><th class="num">A</th><th class="num" title="This month">Month</th><th class="num" title="Whole batch so far">Overall</th></tr></thead>
         <tbody>${d.students.map((s) => `<tr data-sid="${esc(s.id)}"><td class="tech">${esc(s.name)}</td>
-          ${d.days.map((x) => { const v = s.marks[x.date] || ''; return `<td class="mark m-${v} ${isAdmin() ? 'editable' : ''} ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')} ${x.date === today ? 'today' : ''}" data-date="${x.date}" title="${fmtDate(x.date)}${x.classDay ? ' · class day' : ''}">${v}</td>`; }).join('')}
+          ${d.days.map((x) => { const v = s.marks[x.date] || ''; return `<td class="mark m-${v} ${canMark ? 'editable' : ''} ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')} ${x.date === today ? 'today' : ''}" data-date="${x.date}" title="${fmtDate(x.date)}${x.classDay ? ' · class day' : ''}">${v}</td>`; }).join('')}
           <td class="num">${s.month.P}</td><td class="num">${s.month.A}</td><td class="num">${pct(s.month.pct)}</td><td class="num grand">${pct(s.overall.pct)}</td></tr>`).join('') || `<tr><td colspan="${d.days.length + 5}" class="empty">No students.</td></tr>`}
         </tbody>
       </table></div>
@@ -720,7 +795,7 @@
       ${d.students.length ? `<div class="panel chart-sheet" style="margin-top:16px"><h2>Attendance — ${MONTHS[d.monthNo - 1]} ${d.year}</h2><div class="chart-box"><canvas id="c-att-month" aria-label="Attendance this month per student"></canvas></div></div>` : ''}`);
     wireMonthPicker('att-month', '#/attendance');
     if (d.students.length) attendanceChart($('#c-att-month'), d.students.map((s) => ({ name: s.name, ...s.month })));
-    if (!isAdmin()) return;
+    if (!canMark) return;
     const saveBtn = $('#att-save');
     const setCell = (td, v) => {
       const sid = td.parentNode.dataset.sid, key = td.dataset.date + '|' + sid;
@@ -1177,8 +1252,8 @@
   const TABLES = {
     Batches: { title: 'Academic years', hint: 'One row per academic year (batch), e.g. 2026-2027 with its first and last month. The current year is chosen from today’s date; tick Current only to decide between two overlapping years.', cols: [
       ['ID', 'Academic year', 120], ['Start', 'Starts', 150, 'date'], ['End', 'Ends', 150, 'date'], ['Curriculum', 'Curriculum', 200, 'curriculum'], ['Current', 'Current', 70, 'bool'], ['Notes', 'Notes', 240]] },
-    Students: { title: 'Students', hint: 'DRP1 and DRP2 students of every academic year. The ID links a student to their sign-in account; the academic year decides where they appear.', cols: [
-      ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Batch', 'Academic year', 120, 'year'], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Students: { title: 'Students', hint: 'DRP1 and DRP2 students of every academic year. The ID links a student to their sign-in account; the academic year decides where they appear. Class leader (DRP2, one per class): logs the common activities and marks the class attendance.', cols: [
+      ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Batch', 'Academic year', 120, 'year'], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool'], ['Leader', 'Class leader', 90, 'flag']] },
     Faculty: { title: 'Faculty / activities', hint: 'Activities (Seminar, Paper Presentation, Online Learning, Exam) are listed with faculty so they can be chosen for a session.', cols: [
       ['Code', 'Code', 70], ['Abbr', 'Abbr.', 70], ['Name', 'Name', 200], ['Type', 'Type', 100, ['Faculty', 'Activity']], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Papers: { title: 'Papers / courses', hint: 'Papers (yearly scheme) and courses (semester scheme from 2026-27). Curriculum decides which academic years use them. Hours = RCC’s plan; Official = the curriculum’s figure.', cols: [
@@ -1215,7 +1290,11 @@
         <p>Copies each academic year's records from the previous version of DRP Manager: students, faculty, syllabus,
         class log, attendance, holidays, exams, class tests, assignments and the report-sent log. The previous records are only read, never changed.
         Re-importing a year never creates duplicates and never touches other years; anything entered or edited in DRP Manager is kept.</p>
+        <h3 style="margin:8px 0 4px">DRP1</h3>
         <div id="imp-years"><div class="loading">Loading…</div></div>
+        <h3 style="margin:16px 0 4px">DRP2 (one record per student)</h3>
+        <p class="note">Each DRP2 student's activities (clinical training, internship), attendance, faculty and holidays. Re-importing a student replaces only that student's imported records.</p>
+        <div id="imp-drp2"><div class="loading">Loading…</div></div>
         <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
       </div></details>
       <details class="sect"><summary>Database<span class="sect-hint">storage used · reload</span></summary><div class="sect-body">
@@ -1232,6 +1311,7 @@
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
     wireImport();
+    wireImportDrp2();
     $('#trim-data').onclick = async () => {
       if (!(await confirmBox('Trim empty rows and columns', 'Remove the empty columns after each table’s last field and the empty rows after its last record (50 spare rows are kept; more are added automatically when needed)? Records are not touched.', 'Trim'))) return;
       const r = await write('compactStorage', {});
@@ -1307,6 +1387,49 @@
       } finally { busy = false; $$('button', box).forEach((b) => { b.disabled = false; }); }
     }
   }
+  /** Settings › Import › DRP2: one row per student sheet, Import / Import all DRP2. */
+  function wireImportDrp2() {
+    const det = $('#imp-sect'), box = $('#imp-drp2'), out = $('#imp-out');
+    let list = [], busy = false;
+    const rows = () => list.flatMap((y) => y.students.map((s) => ({ ...s, year: y.year })));
+    const draw = () => {
+      box.innerHTML = `<div class="table-wrap"><table class="fit"><thead><tr><th style="width:120px">Academic year</th><th>Student</th><th style="width:190px">Last imported</th><th style="width:110px"></th></tr></thead>
+        <tbody>${rows().map((r, i) => `<tr><td class="tech">${esc(r.year)}</td><td>S${r.no} · ${esc(r.name)}</td>
+          <td>${r.lastImport ? esc(new Date(r.lastImport).toLocaleString('en-GB')) : '<span class="note">never</span>'}</td>
+          <td><button class="btn small" type="button" data-imp2="${i}">Import</button></td></tr>`).join('')}</tbody></table></div>
+        <div class="actions"><button class="btn primary" type="button" id="imp2-all">Import all DRP2 students</button></div>`;
+      $$('[data-imp2]', box).forEach((b) => b.addEventListener('click', () => run([Number(b.dataset.imp2)])));
+      $('#imp2-all').onclick = () => run(rows().map((_, i) => i));
+    };
+    const load = async () => { const r = await guarded(() => API.call('drp2Sources')); if (r) { list = r; draw(); } };
+    det.addEventListener('toggle', () => { if (det.open && !list.length) load(); });
+    async function run(idx) {
+      if (busy || !idx.length) return;
+      const all = rows();
+      if (!(await confirmBox('Import DRP2 records', `Import ${idx.length} DRP2 student record(s)? Each takes up to half a minute.`, 'Import'))) return;
+      busy = true; out.hidden = false;
+      $$('button', box).forEach((b) => { b.disabled = true; });
+      const log = [];
+      try {
+        for (const [n, i] of idx.entries()) {
+          const r = all[i];
+          out.textContent = log.concat(`${n + 1}/${idx.length}  ${r.year} S${r.no} ${r.name}…`).join('\n');
+          let res;
+          try { res = await write('importDrp2', { year: r.year, no: r.no }); }
+          catch (e) { log.push(`${n + 1}/${idx.length}  ${r.year} S${r.no} ${r.name} — FAILED: ${e.message}`); continue; }
+          if (!res) return;
+          log.push(`${n + 1}/${idx.length}  ${res.academicYear} ${res.student} (${res.studentId}) — ${res.sessions.imported} activities, ${res.attendance.imported} attendance marks${res.newTopics.topics ? `, ${res.newTopics.topics} new topics` : ''}`);
+          (res.notes || []).forEach((t) => log.push('      Note: ' + t));
+          out.textContent = log.join('\n');
+        }
+        toast('DRP2 import finished.');
+        await refreshConfig();
+        initYear();
+        renderBadge();
+        await load();
+      } finally { busy = false; $$('button', box).forEach((b) => { b.disabled = false; }); }
+    }
+  }
   function renderUsers(users) {
     const body = $('#users-body');
     const studs = Object.values(state.cfg.students).flat();
@@ -1365,6 +1488,7 @@
       const name = `${i}.${key}`, aria = `aria-label="${esc(label)} row ${i + 1}"`;
       if (Array.isArray(type)) return `<select name="${name}" ${aria}>${type.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}${v && !type.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select>`;
       if (type === 'bool') return `<input type="checkbox" name="${name}" ${v === '' || v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;
+      if (type === 'flag') return `<input type="checkbox" name="${name}" ${v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;   // unticked when empty
       if (type === 'date') return `<input type="date" name="${name}" value="${esc(v)}" ${aria}>`;
       if (type === 'color') return `<input type="color" name="${name}" value="${esc(/^#[0-9a-f]{6}$/i.test(v) ? v : '#888888')}" ${aria} style="padding:2px;min-height:32px">`;
       return `<input name="${name}" value="${esc(v)}" ${aria}>`;
@@ -1390,7 +1514,7 @@
         const o = { ...r };
         spec.cols.forEach(([k, , , type]) => {
           const el = box.querySelector(`[name="${i}.${k}"]`);
-          if (el) o[k] = type === 'bool' ? el.checked : el.value;
+          if (el) o[k] = type === 'bool' || type === 'flag' ? el.checked : el.value;
         });
         return o;
       });

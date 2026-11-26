@@ -12,10 +12,25 @@
         <li><b>Admin</b>: sees and edits everything: users, students, faculty, syllabus, holidays and the database tools.</li>
         <li><b>Faculty</b>: sees everything an admin sees, including every student's attendance, marks and report card, and their own
         teaching hours on the Faculty page, but cannot change anything. Each faculty account is linked to one faculty member.</li>
-        <li><b>Student</b>: DRP1 activities are the same for every student, so all DRP1 students see the shared class log,
+        <li><b>DRP1 student</b>: DRP1 activities are the same for every student, so all DRP1 students see the shared class log,
         syllabus, exam timetable, class tests, assignments and calendar. Attendance, marks, ratings and the report card show
         <b>only the signed-in student's own record</b>. This is enforced by the server, not just hidden in the page.</li>
+        <li><b>DRP2 student</b>: sees and logs <b>only their own</b> activities (clinical training, internship), plus the common
+        activities of their class; sees only their own attendance and report card.</li>
+        <li><b>DRP2 class leader</b> (one per class, ticked in Settings › Students): also logs the class's common activities
+        (seminars, paper presentations, …) and marks the attendance of the whole class.</li>
       </ul>`],
+    ['DRP1 and DRP2', `<p>DRP1 is the first year (classes common to the whole batch); DRP2 is the second year (clinical training and
+      internship), where <b>every student's activities are different</b>. A DRP2 year runs from November to December of the next year.</p>
+      <ul><li><b>Admins and faculty</b>: switch with the <b>DRP1 | DRP2</b> buttons at the top. In DRP2, choose the student next to them;
+      the Dashboard, Class log, Reports and Faculty pages then show that student. The Attendance page shows the whole class.
+      Syllabus, Exams, Class tests and Assignments are DRP1 pages and are hidden in DRP2.</li>
+      <li><b>DRP2 students</b> go straight to their own DRP2 pages. In the Class log they add and edit their own activities
+      (click an empty cell). Activities marked <span class="tag class-tag">Class</span> are common to the whole class.</li>
+      <li><b>The class leader</b> adds common activities (tick <i>Common activity of the whole class</i> in the session form) and
+      marks the class attendance (P / A) on the Attendance page.</li>
+      <li>On the DRP2 dashboard, <i>Hours by paper and activity</i> shows the clinical areas (e.g. Treatment Planning, Machine QA,
+      Treatment Setup), then the activities.</li></ul>`],
     ['Dashboard', `<p>An overview of the academic year shown in the badge at the top right. Each chart shows its total for the year in its top-right corner.</p>
       <ul>
         <li><b>Teaching hours per month</b>: hours and class days per month.</li>
@@ -68,12 +83,12 @@
     ['Faculty', `<p>Lecture days and hours by month, with the list of lectures and topics. Admins see every faculty member and activity; a faculty member sees their own.</p>`],
     ['Settings', `<ul><li><b>Academic year</b>: choose the year shown everywhere; admins also edit the list of academic years here.</li>
       <li><b>Display</b>: choose the font (Default or Courier New) and the page width (Comfortable, centred; or Full width for wide tables). The choice is kept on this device. Admins can make their choice the default for everyone.</li>
-      <li><b>Import previous records</b> (admin): reads the records of the previous version of DRP Manager (never changes them) and copies them, one academic year at a time. Safe to run again. Anything entered or edited in DRP Manager is kept.</li>
+      <li><b>Import previous records</b> (admin): reads the records of the previous version of DRP Manager (never changes them) and copies them: DRP1 one academic year at a time, DRP2 one student at a time. Safe to run again. Anything entered or edited in DRP Manager is kept.</li>
       <li><b>Database</b> (admin): <i>Storage used</i> shows how much of the database's 10 million cells is used (green, amber from 70%, red from 90%), with <i>Show storage by table</i>.
       <i>Reload data from the database</i> shows at once any change made directly in the database (otherwise it appears within 6 hours).
       <i>Trim empty rows and columns</i> frees unused space; records are never touched.</li>
       <li><b>Users</b> (admin): add admin, faculty and student accounts. Each faculty account is linked to one faculty member, and each student account to one student.</li>
-      <li><b>Students, Faculty, Papers, Topics, Holidays, Application settings</b> (admin): edit the lists. Changing a student's ID keeps their attendance, marks and account with them.</li>
+      <li><b>Students, Faculty, Papers, Topics, Holidays, Application settings</b> (admin): edit the lists. Changing a student's ID keeps their attendance, marks and account with them. Tick <i>Class leader</i> for one DRP2 student per class.</li>
       <li><b>My account</b>: change your user name or password.</li></ul>`],
     ['Privacy', `<p>The website holds no data. Everything is stored in the DRP Manager database and served by the DRP Manager server after you sign in.
       Passwords are stored only as salted hashes. Five wrong passwords lock that user name for 15 minutes.</p>`]
