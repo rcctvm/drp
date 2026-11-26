@@ -353,7 +353,7 @@
           const isLine = (ds.type || c.config.type) === 'line';
           c.getDatasetMeta(di).data.forEach((el, i) => {
             const v = ds.data[i];
-            if (v == null) return;
+            if (v == null || (opts.hideZero && !Number(v))) return;
             const t = fmtV(v);
             if (horizontal) {                       // value just past the end of the bar
               g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = opts.color || '#ffffff';
@@ -531,9 +531,10 @@
   // ---------- Dashboard ----------
   async function viewDashboard() {
     if (!onPage('dashboard')) return;   // the user has moved to another page meanwhile
-    const d = await cachedLoad('dashboard', { program: state.program }, viewDashboard);
+    const classMonth = allStudents() ? (state.d2month || '') : undefined;
+    const d = await cachedLoad('dashboard', classMonth ? { program: state.program, month: classMonth } : { program: state.program }, viewDashboard);
     if (!d) return;
-    if (allStudents() && d.byStudent) return drp2ClassDashboard(d);
+    if (allStudents() && d.byStudent) return drp2ClassDashboard(d, {});
     const s = state.cfg.settings, me = state.cfg.me;
     const att = d.attendance;
     // Faculty only (activities such as Seminar or Exam are left out, as in the legacy "Faculty - Hours" chart).
@@ -682,41 +683,70 @@
    * (each student a colour), one chart per posting (TPS, QA, beam checks, chart check, treatment setup …)
    * by item, the days present / absent and working vs productive days.
    */
-  const STUDENT_COLORS = ['#00ffff', '#ffff00', '#ff6fd8', '#3ddc84', '#ff9f40', '#b48cff'];
-  function drp2ClassDashboard(d) {
-    const c = d.byStudent, sts = c.students;
+  // Google Sheets' default series colours, as in the legacy combined report charts (navy background).
+  const STUDENT_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853', '#FF6D01', '#46BDC6'];
+  function drp2ClassDashboard(d, ctx) {
+    const c = d.byStudent, sts = c.students, report = !!ctx.report;
     const h = (m) => Math.round((m || 0) / 6) / 10;
     const total = sts.reduce((a, s) => a + Object.values(s.hours).reduce((x, y) => x + y, 0), 0);
-    const att = d.attendance.filter((a) => a.pct != null);
+    const att = (c.attendance || d.attendance).filter((a) => a.pct != null);
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + x.pct, 0) / att.length) / 10 : null;
     const postings = c.areas.filter((a) => a.paper && a.items.length);
-    setMain(`
-      <div class="toolbar">
-        <div><h1>DRP2 dashboard</h1><div class="sub"><b>All students</b> · ${sts.length} student(s) · clinical training and internship</div></div>
-        <div style="flex:1"></div>${yearLabel()}
-      </div>
-      <div class="grid kpis">
-        <div class="kpi"><div class="label">Students</div><div class="value">${sts.length}</div><div class="hint">${periodLabel()}</div></div>
-        <div class="kpi"><div class="label">Hours (all students)</div><div class="value">${minToHM(total)}</div><div class="hint">hours:minutes</div></div>
-        <div class="kpi"><div class="label">Average per student</div><div class="value">${sts.length ? minToHM(total / sts.length) : '—'}</div></div>
-        <div class="kpi"><div class="label">Average attendance</div><div class="value">${pct(avg)}</div><div class="hint">${sts.length} students</div></div>
-      </div>
-      <div class="panel chart-sheet" style="margin-top:16px"><div class="chart-head"><h2 style="text-align:left">Activity - Hours</h2>${totalBadge(`<b>${minToHM(total)}</b> h`, 'All students together')}</div>
-        <div class="chart-box" style="height:360px"><canvas id="c-cls-areas" aria-label="Hours per area for each student"></canvas></div></div>
-      <div class="grid two">${postings.map((a, i) => `<div class="panel chart-sheet"><div class="chart-head"><h2 style="text-align:left">${i + 1}. ${esc(a.label)}</h2>${totalBadge(`<b>${minToHM(sts.reduce((x, s) => x + (s.hours[a.key] || 0), 0))}</b> h`, 'All students together')}</div>
-        <div class="chart-box"><canvas id="c-cls-${i}" aria-label="${esc(a.label)}: hours per item for each student"></canvas></div></div>`).join('')}</div>
+    // Top-right of a chart: every student's own total (adding students' hours together means nothing).
+    const perStudentTotals = (val) => `<div class="chart-total st-totals">${sts.map((s, k) => `<span><i class="dot" style="background:${STUDENT_COLORS[k % STUDENT_COLORS.length]}"></i>${esc(s.name.split(' ')[0])} <b>${minToHM(val(s))}</b></span>`).join('')}</div>`;
+    const monthName = (k) => { const [y, m] = k.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; };
+    const period = c.month ? monthName(c.month) : periodLabel();
+    const monthSel = report ? '' : `<div class="field"><label for="cls-month">Month</label><select id="cls-month"><option value="">Whole year</option>${batchMonths().map((m) =>
+      `<option value="${m.key}" ${m.key === c.month ? 'selected' : ''}>${MONTHS[m.monthNo - 1]} ${m.year}</option>`).join('')}</select></div>`;
+    const reportTables = !report ? '' : `
       <div class="grid two">
-        <div class="panel chart-sheet"><h2>Total Days</h2><div class="chart-box"><canvas id="c-cls-att" aria-label="Days present and absent per student"></canvas></div></div>
+        <div class="panel"><h2>Attendance — ${esc(period)}</h2><div class="table-wrap"><table><thead><tr><th>Student</th><th class="num">T</th><th class="num">P</th><th class="num">A</th><th class="num">%</th></tr></thead>
+          <tbody>${(c.attendance || []).map((a) => `<tr><td>${esc(a.name)}</td><td class="num">${a.total}</td><td class="num">${a.P}</td><td class="num">${a.A}</td><td class="num">${pct(a.pct)}</td></tr>`).join('')}</tbody></table></div></div>
+        <div class="panel"><h2>Hours by area — ${esc(period)}</h2><div class="table-wrap"><table><thead><tr><th>Area / activity</th>${sts.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}</tr></thead>
+          <tbody>${c.areas.map((a) => `<tr><td>${esc(a.label)}</td>${sts.map((s) => `<td class="num">${s.hours[a.key] ? minToHM(s.hours[a.key]) : '—'}</td>`).join('')}</tr>`).join('')}
+          <tr class="total"><td>Total</td>${sts.map((s) => `<td class="num">${minToHM(Object.values(s.hours).reduce((x, y) => x + y, 0))}</td>`).join('')}</tr></tbody></table></div></div>
+      </div>
+      <div class="panel"><h2>Common activities of the class — ${esc(period)}</h2>${(c.common || []).length ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Time</th><th>Activity</th><th>Faculty / activity</th><th class="num">Hours</th></tr></thead>
+        <tbody>${c.common.map((x) => `<tr><td>${fmtDate(x.date)}</td><td>${x.start ? `${fmtTime(x.start)}–${fmtTime(x.end)}` : ''}</td><td class="wrap">${esc(x.topic)}</td><td class="wrap">${esc(x.faculty)}</td><td class="num">${minToHM(x.minutes)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="note">None logged.</p>'}</div>
+      <div class="foot">Generated by DRP Manager on ${new Date().toLocaleString('en-GB')}</div>`;
+    setMain(`${ctx.head || ''}
+      ${report ? `<div class="toolbar no-print"><div style="flex:1"></div>${monthPicker('mr-month', ctx.year, ctx.monthNo)}<button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
+        <div class="report-head"><div class="dept">${esc(state.cfg.settings.department)}</div><h2>Monthly Report — DRP2 (all students)</h2><div>${esc(period)} · Academic year ${esc(state.batch || '')}</div></div>`
+      : `<div class="toolbar">
+        <div><h1>DRP2 dashboard</h1><div class="sub"><b>All students</b> · ${sts.length} student(s) · ${esc(period)}</div></div>
+        <div style="flex:1"></div>${monthSel}${yearLabel()}
+      </div>`}
+      <div class="grid kpis">
+        <div class="kpi"><div class="label">Students</div><div class="value">${sts.length}</div><div class="hint">${esc(period)}</div></div>
+        ${sts.map((s, k) => { const a = (c.attendance || []).find((x) => x.id === s.id) || {};
+          return `<div class="kpi"><div class="label"><i class="dot" style="background:${STUDENT_COLORS[k % STUDENT_COLORS.length]}"></i>${esc(s.name)}</div><div class="value">${minToHM(Object.values(s.hours).reduce((x, y) => x + y, 0))}</div>
+            <div class="hint">hours · attendance ${pct(a.pct)}</div></div>`; }).join('')}
+      </div>
+      <div class="panel chart-sheet" style="margin-top:16px"><div class="chart-head"><h2 style="text-align:left">Activity - Hours</h2>${perStudentTotals((s) => Object.values(s.hours).reduce((x, y) => x + y, 0))}</div>
+        <div class="chart-box" style="height:360px"><canvas id="c-cls-areas" aria-label="Hours per area for each student"></canvas></div></div>
+      ${postings.map((a, i) => `<div class="panel chart-sheet"><div class="chart-head"><h2 style="text-align:left">${i + 1}. ${esc(a.label)}</h2>${perStudentTotals((s) => s.hours[a.key] || 0)}</div>
+        <div class="chart-box" style="height:${Math.max(240, a.items.length * (sts.length * 13 + 14) + 70)}px"><canvas id="c-cls-${i}" aria-label="${esc(a.label)}: hours per item for each student"></canvas></div></div>`).join('')}
+      <div class="grid two">
+        <div class="panel chart-sheet"><h2>Attendance</h2><div class="chart-box"><canvas id="c-cls-att" aria-label="Days present and absent per student"></canvas></div></div>
         <div class="panel chart-sheet"><h2>Working Days vs Productive Days</h2><div class="chart-box"><canvas id="c-cls-days" aria-label="Working and productive days per student"></canvas></div>
           <p class="note" style="color:#c9d7e3;margin:8px 0 0">Working days: days attendance was taken. Productive days: days with at least one activity (with times) logged.</p></div>
       </div>
-      ${d.checks ? checksPanel(d) : ''}`);
+      ${reportTables}
+      ${d.checks && !report && !c.month ? checksPanel(d) : ''}`);
+    if (report) wireMonthPicker('mr-month', '#/reports/monthly');
+    else { const ms = $('#cls-month'); if (ms) ms.onchange = () => { state.d2month = ms.value; viewDashboard(); }; }
     const perStudent = (labels, val) => sts.map((s, k) => ({ label: s.name, data: labels.map((x) => val(s, x)), backgroundColor: STUDENT_COLORS[k % STUDENT_COLORS.length], maxBarThickness: 28 }));
     const opts = { maintainAspectRatio: false, layout: { padding: { top: 22 } }, scales: sheetScales(false),
-      plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { mode: 'top' } } };
+      plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { mode: 'top', hideZero: true } } };
+    // Postings: items down the left, one bar per student, hours at the end of each bar.
+    const hopts = { indexAxis: 'y', maintainAspectRatio: false, layout: { padding: { right: 40 } },
+      scales: { x: { beginAtZero: true, grace: '6%', ticks: { color: '#c9d7e3' }, grid: { color: 'rgba(255,255,255,.12)' } },
+        y: { ticks: { color: '#ffffff', font: { size: 12 } }, grid: { display: false } } },
+      plugins: { legend: { position: 'top', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { mode: 'top', hideZero: true } },
+      datasets: { bar: { barPercentage: 0.9, categoryPercentage: 0.85 } } };
     chart($('#c-cls-areas'), { type: 'bar', data: { labels: c.areas.map((a) => a.label), datasets: perStudent(c.areas, (s, a) => h(s.hours[a.key])) }, options: opts });
     postings.forEach((a, i) => chart($(`#c-cls-${i}`), { type: 'bar',
-      data: { labels: a.items.map((it) => it.name.replace(/^(QA|Beam Check|Chart Check|Treatment Setup)\s*-?\s*/i, '') || it.code), datasets: perStudent(a.items, (s, it) => h(((s.items || {})[a.key] || {})[it.code])) }, options: opts }));
+      data: { labels: a.items.map((it) => it.name.replace(/^(QA|Beam Check|Chart Check|Treatment Setup)\s*-?\s*/i, '') || it.code), datasets: perStudent(a.items, (s, it) => h(((s.items || {})[a.key] || {})[it.code])) }, options: hopts }));
     chart($('#c-cls-att'), { type: 'bar', data: { labels: sts.map((s) => s.name), datasets: [
       { label: 'Present', data: sts.map((s) => s.present), backgroundColor: ATT_COLORS.P, maxBarThickness: 40 },
       { label: 'Absent', data: sts.map((s) => s.absent), backgroundColor: ATT_COLORS.A, maxBarThickness: 40 }] },
@@ -735,8 +765,16 @@
     if (allStudents()) return chooseStudent('Class log', 'Each DRP2 student has their own class log. Choose a student:');
     const d = await cachedLoad('sessions', { program: state.program, year, month: monthNo }, () => viewLog(year, monthNo));
     if (!d) return;
-    const bySlot = {};
-    d.sessions.forEach((s) => { bySlot[s.date + '|' + s.slot] = s; });
+    const bySlot = {}, extra = {};
+    // Own activity first; a common class activity in the same session slot is shown under it.
+    d.sessions.slice().sort((a, b) => (a.common ? 1 : 0) - (b.common ? 1 : 0)).forEach((s) => {
+      const k = s.date + '|' + s.slot;
+      if (bySlot[k]) (extra[k] = extra[k] || []).push(s); else bySlot[k] = s;
+    });
+    const sesBlock = (s) => `${s.start || s.end ? `<div class="t">${fmtTime(s.start)}–${fmtTime(s.end)}${s.minutes ? ` · ${minToHM(s.minutes)}` : ''}</div>` : ''}
+        <div class="tp">${s.common ? '<span class="tag class-tag" title="Common activity of the whole class">Class</span> ' : ''}${s.kind && s.kind !== 'Lecture' ? `<span class="tag kind-${esc(s.kind.toLowerCase())}">${esc(s.kind)}</span> ` : ''}${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
+        ${s.faculty.length ? `<div class="fc">${esc(s.faculty.map((f) => f.name).join(', '))}</div>` : ''}
+        ${s.remarks ? `<div class="note">${esc(s.remarks)}</div>` : ''}`;
     const slots = state.cfg.slots || 7;
     // Columns shown: the sessions used this month (at least 3 for an admin), plus any the admin added
     // with "+ Add session" (up to the 7 hours of the Weekly Time Table).
@@ -751,11 +789,8 @@
       const mayEdit = canLog() && (!s || !s.common || isAdmin() || isLeader());
       const cls = ['ses', mayEdit ? 'editable' : '', day.holiday ? 'hol' : (day.dow === 0 ? 'off' : '')].join(' ');
       if (!s) return `<td class="${cls}" data-date="${day.date}" data-slot="${k}">${mayEdit ? '<span class="empty-slot">+</span>' : ''}</td>`;
-      return `<td class="${cls}" data-date="${day.date}" data-slot="${k}" data-id="${esc(s.id)}">
-        ${s.start || s.end ? `<div class="t">${fmtTime(s.start)}–${fmtTime(s.end)}${s.minutes ? ` · ${minToHM(s.minutes)}` : ''}</div>` : ''}
-        <div class="tp">${s.common ? '<span class="tag class-tag" title="Common activity of the whole class">Class</span> ' : ''}${s.kind && s.kind !== 'Lecture' ? `<span class="tag kind-${esc(s.kind.toLowerCase())}">${esc(s.kind)}</span> ` : ''}${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
-        ${s.faculty.length ? `<div class="fc">${esc(s.faculty.map((f) => f.name).join(', '))}</div>` : ''}
-        ${s.remarks ? `<div class="note">${esc(s.remarks)}</div>` : ''}</td>`;
+      return `<td class="${cls}" data-date="${day.date}" data-slot="${k}" data-id="${esc(s.id)}">${sesBlock(s)}
+        ${(extra[day.date + '|' + k] || []).map((x) => `<div class="ses-extra">${sesBlock(x)}</div>`).join('')}</td>`;
     };
     setMain(`
       <div class="toolbar">
@@ -1178,12 +1213,21 @@
     if (tab === 'log' && isAdmin()) return reportLog(head);
     return monthlyReport(head, a, b);
   }
+  /** DRP2, all students: the monthly report sent to the students and the Head of the Department. */
+  async function classMonthlyReport(head, year, monthNo) {
+    const key = `${year}-${String(monthNo).padStart(2, '0')}`;
+    const d = await cachedLoad('dashboard', { program: state.program, month: key }, () => classMonthlyReport(head, year, monthNo));
+    if (!d || !onPage('reports')) return;
+    if (!d.byStudent) { setMain(head + '<div class="empty">No DRP2 students this year.</div>'); return; }
+    drp2ClassDashboard(d, { report: true, head, year, monthNo });
+  }
   async function monthlyReport(head, year, monthNo) {
     if (!onPage('reports')) return;   // the user has moved to another page meanwhile
     const dm = defaultMonth();
     // Reports are usually prepared for the previous month.
     if (!year) { const i = batchMonths().findIndex((m) => m.key === dm.key); const pm = batchMonths()[Math.max(0, i - 1)] || dm; year = pm.year; monthNo = pm.monthNo; }
     year = Number(year); monthNo = Number(monthNo);
+    if (allStudents()) return classMonthlyReport(head, year, monthNo);
     const d = await cachedLoad('monthlyReport', { program: state.program, year, month: monthNo }, () => monthlyReport(head, year, monthNo));
     if (!d) return;
     const s = state.cfg.settings;

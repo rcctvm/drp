@@ -471,3 +471,8 @@ body.prog-DRP2 nav.tabs a.drp1-only { display: none !important; }
 .filter-bar .field select { min-width: 150px; }
 details.sub-sect { margin: 8px 0; }
 details.sub-sect > summary { font-size: 16px; }
+/* DRP2 class view: per-student totals and colour dots; second activity in a class-log slot */
+i.dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.st-totals { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: flex-end; white-space: normal; max-width: 70%; }
+.st-totals b { font-size: 14px; }
+.ses-extra { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,.25); }

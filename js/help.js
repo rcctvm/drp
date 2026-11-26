@@ -24,12 +24,16 @@
       internship), where <b>every student's activities are different</b>. A DRP2 year runs from November to December of the next year.</p>
       <ul><li><b>Admins and faculty</b>: switch with the <b>DRP1 | DRP2</b> buttons at the top. In DRP2, choose the student next to them, or
       <b>All students</b> (the default): the Dashboard then shows the whole class side by side, as in the monthly DRP2 report
-      (Activity - Hours, one chart per posting such as TPS, QA, beam checks, chart check and treatment setup, Total Days, and Working
-      vs Productive Days), each student in their own colour. With one student chosen, the Dashboard, Class log, Reports and Faculty
+      (Activity - Hours, one chart per posting such as TPS, QA, beam checks, chart check and treatment setup, Attendance, and Working
+      vs Productive Days), each student in their own colour with their own hours (students' hours are never added together). Choose a <b>Month</b>
+      to see one month; <b>Reports › Monthly report</b> with All students selected is the printable monthly DRP2 report (charts,
+      attendance, hours by area per student and the class's common activities). With one student chosen, the Dashboard, Class log, Reports and Faculty
       pages show that student; the Class log always needs a student. The Attendance page shows the whole class.
       Syllabus, Exams, Class tests and Assignments are DRP1 pages and are hidden in DRP2.</li>
       <li><b>DRP2 students</b> go straight to their own DRP2 pages. In the Class log they add and edit their own activities
       (click an empty cell). Activities marked <span class="tag class-tag">Class</span> are common to the whole class.</li>
+      <li><b>Common activities</b> (seminars, paper presentations, conferences, online classes, exams, class tests) come from the
+      class leader's record and count for every student; in the previous records, the class leader's sheet held them (and the class attendance).</li>
       <li><b>The class leader</b> adds common activities (tick <i>Common activity of the whole class</i> in the session form) and
       marks the class attendance (P / A) on the Attendance page.</li>
       <li>On the DRP2 dashboard, <i>Hours by paper and activity</i> shows the clinical areas (e.g. Treatment Planning, Machine QA,
