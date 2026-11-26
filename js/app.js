@@ -213,11 +213,19 @@
     }));
   }
   const topicLabel = (code) => { const t = state.cfg.topics.find((x) => x.code === code); return t ? `(${t.code}) ${t.name}` : code; };
+  /** Curriculum of the selected academic year (yearly scheme up to 2025-26, semesters from 2026-27). */
+  const curriculum = () => year().curriculum || 'DRP-YEARLY';
+  const isSemester = () => curriculum() !== 'DRP-YEARLY';
+  const curPapers = () => state.cfg.papers.filter((p) => p.program === state.program && (p.curriculum || 'DRP-YEARLY') === curriculum());
+  const curTopics = () => state.cfg.topics.filter((t) => (t.curriculum || 'DRP-YEARLY') === curriculum() || ['EXM', 'CLT', 'SEM', 'PAP', 'ONL'].includes(t.code));
   const topicOptions = (sel) => {
     const byPaper = {};
-    state.cfg.topics.forEach((t) => { (byPaper[t.paper || 'Other'] = byPaper[t.paper || 'Other'] || []).push(t); });
-    const paperTitle = (c) => { const p = state.cfg.papers.find((x) => x.code === c); return p ? `${p.code} — ${p.short || p.title}` : c; };
-    return '<option value="">— none —</option>' + Object.keys(byPaper).map((p) => `<optgroup label="${esc(paperTitle(p))}">${
+    curTopics().forEach((t) => { (byPaper[t.paper || 'Other'] = byPaper[t.paper || 'Other'] || []).push(t); });
+    const order = curPapers().map((p) => p.code);
+    const paperTitle = (c) => { const p = state.cfg.papers.find((x) => x.code === c); return p ? (isSemester() ? `${p.short} — ${p.title}` : `${p.code} — ${p.short || p.title}`) : c; };
+    const keys = Object.keys(byPaper).sort((a, b) => (order.indexOf(a) < 0 ? 99 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 99 : order.indexOf(b)));
+    if (sel && !curTopics().some((t) => t.code === sel)) { const t = state.cfg.topics.find((x) => x.code === sel); (byPaper[(t && t.paper) || 'Other'] = byPaper[(t && t.paper) || 'Other'] || []).push(t || { code: sel, name: sel }); if (!keys.includes((t && t.paper) || 'Other')) keys.push((t && t.paper) || 'Other'); }
+    return '<option value="">— none —</option>' + keys.map((p) => `<optgroup label="${esc(paperTitle(p))}">${
       byPaper[p].map((t) => `<option value="${esc(t.code)}" ${t.code === sel ? 'selected' : ''}>(${esc(t.code)}) ${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
   };
   const students = () => (state.cfg.students[state.program] || []).filter((s) => !s.batch || s.batch === state.batch);
@@ -453,7 +461,7 @@
     // Faculty only (activities such as Seminar or Exam are left out, as in the legacy "Faculty - Hours" chart).
     const facList = (d.faculty || []).filter((f) => f.type !== 'Activity');
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + (x.pct || 0), 0) / att.filter((x) => x.pct != null).length || 0) / 10 : null;
-    const papers = state.cfg.papers.filter((p) => p.program === state.program);
+    const papers = curPapers();
     const paperRows = papers.map((p) => ({ label: p.short || p.code, minutes: d.paperMinutes[p.code] || 0 }));
     if (d.paperMinutes.Other) paperRows.push({ label: 'Other', minutes: d.paperMinutes.Other });
     if (d.paperMinutes.Unassigned) paperRows.push({ label: 'No topic', minutes: d.paperMinutes.Unassigned });
@@ -543,7 +551,7 @@
       if (!s) return `<td class="${cls}" data-date="${day.date}" data-slot="${k}">${isAdmin() ? '<span class="empty-slot">+</span>' : ''}</td>`;
       return `<td class="${cls}" data-date="${day.date}" data-slot="${k}" data-id="${esc(s.id)}">
         ${s.start || s.end ? `<div class="t">${fmtTime(s.start)}–${fmtTime(s.end)}${s.minutes ? ` · ${minToHM(s.minutes)}` : ''}</div>` : ''}
-        <div class="tp">${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
+        <div class="tp">${s.kind && s.kind !== 'Lecture' ? `<span class="tag kind-${esc(s.kind.toLowerCase())}">${esc(s.kind)}</span> ` : ''}${esc(s.topicCode ? `(${s.topicCode}) ${s.topic}` : s.topic)}</div>
         ${s.faculty.length ? `<div class="fc">${esc(s.faculty.map((f) => f.name).join(', '))}</div>` : ''}
         ${s.remarks ? `<div class="note">${esc(s.remarks)}</div>` : ''}</td>`;
     };
@@ -584,7 +592,10 @@
         <div class="field"><label for="s-slot">Session</label><select id="s-slot" name="slot">${Array.from({ length: state.cfg.slots }, (_, i) => `<option ${i + 1 === s.slot ? 'selected' : ''} value="${i + 1}">${String(i + 1).padStart(2, '0')}</option>`).join('')}</select></div>
         <div class="field"><label for="s-date">Date</label><input id="s-date" name="date" type="date" value="${esc(s.date)}"></div>
       </div>
-      <div class="field" style="margin-top:12px"><label for="s-topic">Topic</label><select id="s-topic" name="topicCode">${topicOptions(s.topicCode || '')}</select></div>
+      <div class="form-grid" style="margin-top:12px;grid-template-columns:${isSemester() ? '170px 1fr' : '1fr'}">
+        ${isSemester() ? `<div class="field"><label for="s-kind">Type of class</label><select id="s-kind" name="kind">${(state.cfg.sessionKinds || ['Lecture', 'Tutorial', 'Practical', 'Exam', 'Other']).map((k) => `<option ${k === (s.kind || 'Lecture') ? 'selected' : ''}>${k}</option>`).join('')}</select></div>` : ''}
+        <div class="field"><label for="s-topic">${isSemester() ? 'Unit / experiment' : 'Topic'}</label><select id="s-topic" name="topicCode">${topicOptions(s.topicCode || '')}</select></div>
+      </div>
       <div class="field" style="margin-top:12px"><label>Faculty / activity (choose one or more)</label>
         <div class="check-list">${fac.map((f) => `<label><input type="checkbox" name="fac" value="${esc(f.abbr)}" ${chosen.has(f.abbr) ? 'checked' : ''}> (${esc(f.abbr)}) ${esc(f.name)}</label>`).join('')}</div></div>
       <div class="field" style="margin-top:12px"><label for="s-remarks">Remarks (optional)</label><input id="s-remarks" name="remarks" maxlength="500" value="${esc(s.remarks || '')}"></div>`;
@@ -593,7 +604,8 @@
       onSave: async (f) => {
         const session = {
           id: s.id, program: state.program, date: f.date.value, slot: Number(f.slot.value), start: f.start.value, end: f.end.value,
-          topicCode: f.topicCode.value, topic: s.topicCode ? '' : (s.topic || ''), faculty: $$('input[name=fac]:checked', f).map((x) => x.value), remarks: f.remarks.value
+          topicCode: f.topicCode.value, topic: s.topicCode ? '' : (s.topic || ''), faculty: $$('input[name=fac]:checked', f).map((x) => x.value), remarks: f.remarks.value,
+          kind: f.kind ? f.kind.value : (s.kind || '')
         };
         const res = await write('saveSession', { session });
         if (res) { toast('Session saved.'); done(); return true; }
@@ -668,6 +680,7 @@
   async function viewSyllabus(filter) {
     const d = await cachedLoad('syllabus', { program: state.program }, () => viewSyllabus(filter));
     if (!d) return;
+    if (d.curriculum && d.curriculum !== 'DRP-YEARLY') return viewSemesterSyllabus(d, filter);
     const q = String(filter || '').toLowerCase();
     const groups = d.papers.map((p) => ({ p, topics: d.topics.filter((t) => t.paper === p.code) }));
     const other = d.topics.filter((t) => !d.papers.some((p) => p.code === t.paper) && t.minutes);
@@ -698,6 +711,58 @@
       }).join('') || '<div class="empty">No syllabus yet. An admin can import it in Settings › Import.</div>'}`);
     const inp = $('#syl-q');
     let t; inp.oninput = () => { clearTimeout(t); t = setTimeout(() => { history.replaceState(null, '', '#/syllabus/' + encodeURIComponent(inp.value)); viewSyllabus(inp.value).then(() => { const i = $('#syl-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 250); };
+  }
+
+  /**
+   * Semester curriculum: Semester → course (type, credits, marks, planned vs taught lecture /
+   * tutorial / practical hours, official figure) → units with planned and taught hours and the
+   * syllabus text; practical experiments with the date last done.
+   */
+  function viewSemesterSyllabus(d, filter) {
+    const q = String(filter || '').toLowerCase();
+    const h = (m) => Math.round((m || 0) / 6) / 10;            // minutes → hours (1 decimal)
+    const pctBar = (done, plan) => { const p = plan ? Math.min(100, Math.round(100 * done / plan)) : 0; return `<span class="bar" title="${p}%"><div style="width:${p}%;${p >= 100 ? 'background:var(--ok)' : ''}"></div></span>`; };
+    const cell = (done, plan) => plan ? `<b class="${done >= plan ? 'ok-num' : ''}">${fmt(h(done))}</b><span class="note"> / ${fmt(plan)} h</span>` : (done ? `<b>${fmt(h(done))}</b> h` : '<span class="zero">—</span>');
+    const match = (t) => !q || (t.code + ' ' + t.name + ' ' + t.lines.join(' ')).toLowerCase().includes(q);
+    const sems = [...new Set(d.papers.map((p) => p.semester || 0))].sort();
+    const course = (p) => {
+      const units = d.topics.filter((t) => t.paper === p.code && t.active !== false);
+      const shown = units.filter(match);
+      if (q && !shown.length && !(p.code + ' ' + p.title).toLowerCase().includes(q)) return '';
+      const tk = p.taught || {}, lec = tk.Lecture || 0, tut = tk.Tutorial || 0, pr = tk.Practical || 0;
+      const planned = (p.lectures + p.tutorials) * 60 || p.practicals * 60, done = (p.practicals ? pr : lec + tut);
+      return `<details class="sect" ${q ? 'open' : ''}><summary><span class="tag code">${esc(p.short || p.code)}</span>${esc(p.title)}
+          <span class="sect-hint">${pctBar(done, planned)} ${fmt(h(done))} / ${fmt(planned / 60)} h</span></summary>
+        <div class="sect-body">
+          <div class="table-wrap" style="margin-bottom:10px"><table class="fit"><thead><tr><th>Type</th><th>Credits</th><th>Marks (internal + external)</th><th>Lectures</th><th>Tutorials</th><th>Practical</th><th>Official (curriculum)</th></tr></thead>
+            <tbody><tr><td>${esc(p.type)}</td><td class="num">${p.credits}</td><td class="num">${p.internal} + ${p.external || '—'}</td>
+              <td class="num">${cell(lec, p.lectures)}</td><td class="num">${cell(tut, p.tutorials)}</td><td class="num">${cell(pr, p.practicals)}</td><td class="num">${esc(p.official)} h</td></tr></tbody></table></div>
+          ${p.notes ? `<p class="note">Teaching sessions (lectures+tutorials before Internal-1 / Internal-2 / Model): ${esc(p.notes)}</p>` : ''}
+          ${shown.map((t) => `<details class="topic" ${q && t.lines.some((l) => l.toLowerCase().includes(q)) ? 'open' : ''}><summary>
+              <span class="tag code">${esc(t.code)}</span><b>${esc(t.name)}</b>
+              ${t.planLectures || t.planTutorials ? `${pctBar(t.minutes, (t.planLectures + t.planTutorials) * 60)}<span class="note">${fmt(h((t.byKind || {}).Lecture))}/${t.planLectures} L · ${fmt(h((t.byKind || {}).Tutorial))}/${t.planTutorials} T</span>` : ''}
+              <span class="note">${t.sessions ? `${t.sessions} session${t.sessions === 1 ? '' : 's'} · ${minToHM(t.minutes)} h · last ${fmtDate(t.last)}` : (t.kind === 'Experiment' ? 'not done yet' : 'not taught yet')}</span></summary>
+              ${t.lines.length ? `<p style="margin:6px 0 4px 22px;color:var(--muted)">${t.lines.map(esc).join('<br>')}</p>` : ''}
+              ${t.faculty.length ? `<p class="note" style="margin:4px 0 0 22px">Taught by: ${esc(t.faculty.map((a) => (state.cfg.faculty.find((f) => f.abbr === a) || { name: a }).name).join(', '))}</p>` : ''}
+            </details>`).join('') || (units.length ? '' : '<p class="note">No units listed for this course.</p>')}
+        </div></details>`;
+    };
+    const semTotals = (sem) => {
+      const ps = d.papers.filter((p) => (p.semester || 0) === sem && ['Core', 'Elective', 'Lab'].includes(p.type));
+      return { credits: ps.reduce((a, p) => a + p.credits, 0), hours: ps.reduce((a, p) => a + p.lectures + p.tutorials + p.practicals, 0),
+        done: ps.reduce((a, p) => a + Object.values(p.taught || {}).reduce((x, y) => x + y, 0), 0) };
+    };
+    setMain(`
+      <div class="toolbar">
+        <div><h1>Syllabus</h1><div class="sub">${esc(d.curriculumLabel)} · academic year ${esc(year().id)} · planned hours from RCC's class schedule; the curriculum's official hours are shown for reference</div></div>
+        <div style="flex:1"></div>
+        <div class="field" style="min-width:260px"><label for="syl-q">Search units</label><input id="syl-q" type="search" value="${esc(filter || '')}" placeholder="e.g. Monte Carlo, IMRT, Python"></div>
+      </div>
+      ${sems.map((sem) => { const t = semTotals(sem); const body = d.papers.filter((p) => (p.semester || 0) === sem).map(course).join('');
+        return body ? `<h2 style="margin-top:18px">Semester ${sem === 1 ? 'I' : sem === 2 ? 'II' : sem}<span class="note" style="font-weight:400"> · ${t.credits} credits · ${fmt(h(t.done))} of ${fmt(t.hours)} planned hours taught</span></h2>${body}` : ''; }).join('')
+        || '<div class="empty">No courses for this academic year’s curriculum.</div>'}`);
+    const inp = $('#syl-q');
+    let tm; inp.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { history.replaceState(null, '', '#/syllabus/' + encodeURIComponent(inp.value)); viewSyllabus(inp.value).then(() => { const i = $('#syl-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 250); };
   }
 
   // ---------- Exams ----------
@@ -735,7 +800,7 @@
     }));
   }
   function editExam(e) {
-    const papers = state.cfg.papers.filter((p) => p.program === state.program);
+    const papers = curPapers();
     formDialog({
       title: e.id ? 'Edit exam paper' : 'Add exam paper',
       body: `<div class="form-grid">
@@ -1008,15 +1073,18 @@
   // ---------- Settings ----------
   const TABLES = {
     Batches: { title: 'Academic years', hint: 'One row per academic year (batch), e.g. 2026-2027 with its first and last month. The current year is chosen from today’s date; tick Current only to decide between two overlapping years.', cols: [
-      ['ID', 'Academic year', 120], ['Start', 'Starts', 150, 'date'], ['End', 'Ends', 150, 'date'], ['Current', 'Current', 70, 'bool'], ['Notes', 'Notes', 260]] },
+      ['ID', 'Academic year', 120], ['Start', 'Starts', 150, 'date'], ['End', 'Ends', 150, 'date'], ['Curriculum', 'Curriculum', 200, 'curriculum'], ['Current', 'Current', 70, 'bool'], ['Notes', 'Notes', 240]] },
     Students: { title: 'Students', hint: 'DRP1 and DRP2 students of every academic year. The ID links a student to their sign-in account; the academic year decides where they appear.', cols: [
       ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Batch', 'Academic year', 120, 'year'], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Faculty: { title: 'Faculty / activities', hint: 'Activities (Seminar, Paper Presentation, Online Learning, Exam) are listed with faculty so they can be chosen for a session.', cols: [
       ['Code', 'Code', 70], ['Abbr', 'Abbr.', 70], ['Name', 'Name', 200], ['Type', 'Type', 100, ['Faculty', 'Activity']], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
-    Papers: { title: 'Papers', hint: 'Examination papers per programme.', cols: [
-      ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Code', 'Code', 100], ['Title', 'Title', 320], ['Short', 'Short name', 120]] },
-    Topics: { title: 'Syllabus topics', hint: 'Topic codes as used in the class log, e.g. THE01. Sub-topics come from the legacy import.', cols: [
-      ['Code', 'Code', 80], ['Name', 'Name', 300], ['PaperCode', 'Paper', 100], ['Subject', 'Subject', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
+    Papers: { title: 'Papers / courses', hint: 'Papers (yearly scheme) and courses (semester scheme from 2026-27). Curriculum decides which academic years use them. Hours = RCC’s plan; Official = the curriculum’s figure.', cols: [
+      ['Curriculum', 'Curriculum', 150, 'curriculum'], ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Code', 'Code', 90], ['Title', 'Title', 300], ['Short', 'Short name', 120],
+      ['Semester', 'Sem.', 50], ['Type', 'Type', 100, ['', 'Core', 'Elective', 'Lab', 'Training', 'Seminar']], ['Lectures', 'Lect. h', 60], ['Tutorials', 'Tut. h', 60], ['Practicals', 'Pract. h', 60],
+      ['Credits', 'Credits', 60], ['Internal', 'Int.', 50], ['External', 'Ext.', 50], ['Official', 'Official', 70], ['Active', 'Active', 60, 'bool'], ['Notes', 'Notes', 200]] },
+    Topics: { title: 'Syllabus topics / units', hint: 'Topic codes as used in the class log (e.g. THE01 in the yearly scheme, S1-C1-U1 for a unit and S1-L1-E01 for an experiment in the semester scheme).', cols: [
+      ['Curriculum', 'Curriculum', 150, 'curriculum'], ['Code', 'Code', 90], ['Name', 'Name', 300], ['PaperCode', 'Paper / course', 100], ['Subject', 'Subject', 110], ['Kind', 'Kind', 100, ['', 'Unit', 'Experiment']],
+      ['Lectures', 'Lect. h', 60], ['Tutorials', 'Tut. h', 60], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Events: { title: 'Academic calendar events', hint: 'Numbered key of the academic calendar. Dates = optional list (yyyy-mm-dd, comma separated) that replaces Start–End, e.g. exam days only. Colour as #RRGGBB.', cols: [
       ['Batch', 'Academic year', 110, 'year'], ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Title', 'Event', 300], ['Start', 'Start', 150, 'date'], ['End', 'End', 150, 'date'], ['Dates', 'Only these dates (optional)', 220], ['Color', 'Colour', 90, 'color'], ['SkipSundays', 'Skip Sundays', 70, 'bool']] },
     Holidays: { title: 'Holidays', hint: 'RCC closed and compensatory holidays (shaded in the class log, attendance and calendar).', cols: [
@@ -1147,6 +1215,7 @@
     const input = (c, v, i) => {
       let [key, label, , type] = c;
       if (type === 'year') { type = years().map((y) => y.id); if (!v) v = state.batch; }
+      if (type === 'curriculum') { type = Object.keys(state.cfg.curricula || { 'DRP-YEARLY': 1 }); if (!v) v = curriculum(); }
       const name = `${i}.${key}`, aria = `aria-label="${esc(label)} row ${i + 1}"`;
       if (Array.isArray(type)) return `<select name="${name}" ${aria}>${type.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}${v && !type.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select>`;
       if (type === 'bool') return `<input type="checkbox" name="${name}" ${v === '' || v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;

@@ -15,14 +15,18 @@
       </ul>`],
     ['Dashboard', `<p>Class days and teaching hours for the batch, hours per month and per paper, how many syllabus topics have been taught,
       attendance, recent classes and upcoming holidays. Admins also see which monthly reports have not been marked as sent.</p>`],
-    ['Class log', `<p>One row per day and up to five sessions per day, as in the old month sheets (OCT, NOV, …). Each session has a start and end time,
-      a syllabus topic and one or more faculty members or activities (Seminar, Paper Presentation, Online Learning, Exam).
-      Hours are calculated from the times. Sundays and RCC holidays are shaded.</p>
+    ['Class log', `<p>One row per day and up to five sessions per day. Each session has a start and end time, a topic (from 2026-27: a unit or a
+      practical experiment) and one or more faculty members or activities. From 2026-27 each session also has a <b>type</b>: Lecture, Tutorial, Practical,
+      Exam or Other, so the Syllabus page can compare taught hours with the plan. Hours are calculated from the times. Sundays and RCC holidays are shaded.</p>
       <p><b>Admins:</b> click an empty cell (+) to add a session, or a filled cell to edit or delete it. Only one session can use each slot on a day.</p>`],
     ['Attendance', `<p>P = present, A = absent, L = leave. Blank means not marked (no class, holiday). The percentage is present ÷ days marked.</p>
       <p><b>Admins:</b> click a cell to cycle P → A → L → blank, then press <b>Save</b>. <b>Mark class days present</b> fills P on every day that has a class logged and no mark yet.</p>`],
-    ['Syllabus', `<p>Papers I–VIII with their topics and sub-topics. For each topic you see the number of sessions, hours taught, the date last taught
-      and who taught it. Use the search box to find a topic or sub-topic.</p>`],
+    ['Syllabus and curricula', `<p>Each academic year follows a curriculum. Up to 2025-26: the yearly scheme (Papers I–VIII with topics and sub-topics).
+      From 2026-27: the <b>semester scheme</b> (NCAHP competency-based curriculum): Semester I and II courses (Core, Elective, Lab), Field Training
+      and Seminar, each with credits, internal + external marks, planned lecture / tutorial / practical hours (RCC's class schedule) and units.</p>
+      <p>The Syllabus page shows, per course and unit, the hours taught against the plan (lectures, tutorials and practicals counted separately),
+      when it was last taught and by whom, and the unit's syllabus text. Practical experiments are listed under the Lab courses. Use the search box to find
+      a unit. The curriculum's official hours are shown next to RCC's plan for reference.</p>`],
     ['Exams, class tests and assignments', `<p>Internal exams are grouped by series (Internal 1, 2, 3). Class tests are marked out of a maximum;
       assignments are rated 1–5 stars, as in the old sheet. Admins click a row to enter marks, or <b>Edit</b> to change the details.</p>`],
     ['Academic years', `<p>Everything in DRP Manager belongs to an academic year (e.g. 2025-2026): the class log, attendance, students,
