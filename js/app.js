@@ -204,7 +204,7 @@
       let want = state.student;
       try { want = want || sessionStorage.getItem('drp.d2student'); } catch (e) {}
       const list = students();
-      state.student = list.some((s) => s.id === want) ? want : ((list[0] || {}).id || '');
+      state.student = list.some((s) => s.id === want) ? want : 'ALL';   // staff see all students by default
     }
     API.setExtra({ batch: state.batch, program: state.program, student: state.student || '' });
     document.body.classList.toggle('prog-DRP2', state.program === 'DRP2');
@@ -219,7 +219,7 @@
     bar.innerHTML = `<div class="prog-switch" role="group" aria-label="Programme">${['DRP1', 'DRP2'].map((p) =>
       `<button type="button" class="${p === state.program ? 'on' : ''}" data-prog="${p}">${p}</button>`).join('')}</div>
       ${state.program === 'DRP2' ? `<select id="d2-student" class="d2-student" aria-label="DRP2 student">${list.length
-        ? list.map((s) => `<option value="${esc(s.id)}" ${s.id === state.student ? 'selected' : ''}>${esc(s.name)}${s.leader ? ' (class leader)' : ''}</option>`).join('')
+        ? `<option value="ALL" ${state.student === 'ALL' ? 'selected' : ''}>All students</option>` + list.map((s) => `<option value="${esc(s.id)}" ${s.id === state.student ? 'selected' : ''}>${esc(s.name)}${s.leader ? ' (class leader)' : ''}</option>`).join('')
         : '<option value="">No DRP2 students this year</option>'}</select>` : ''}`;
     $$('[data-prog]', bar).forEach((b) => b.addEventListener('click', () => switchProgram(b.dataset.prog)));
     const sel = $('#d2-student', bar);
@@ -296,7 +296,8 @@
       byPaper[p].map((t) => `<option value="${esc(t.code)}" ${t.code === sel ? 'selected' : ''}>(${esc(t.code)}) ${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
   };
   const students = () => (state.cfg.students[state.program] || []).filter((s) => !s.batch || s.batch === state.batch);
-  const studentName = () => (students().find((s) => s.id === state.student) || {}).name || '';
+  const studentName = () => (state.student === 'ALL' ? 'All students' : (students().find((s) => s.id === state.student) || {}).name || '');
+  const allStudents = () => state.program === 'DRP2' && state.student === 'ALL';
 
   function destroyCharts() { state.charts.forEach((c) => c.destroy()); state.charts = []; }
   function chart(canvas, config) {
@@ -532,6 +533,7 @@
     if (!onPage('dashboard')) return;   // the user has moved to another page meanwhile
     const d = await cachedLoad('dashboard', { program: state.program }, viewDashboard);
     if (!d) return;
+    if (allStudents() && d.byStudent) return drp2ClassDashboard(d);
     const s = state.cfg.settings, me = state.cfg.me;
     const att = d.attendance;
     // Faculty only (activities such as Seminar or Exam are left out, as in the legacy "Faculty - Hours" chart).
@@ -665,11 +667,72 @@
     </details>`;
   }
 
+  /** DRP2 'All students' on a page that shows one student: buttons to choose the student. */
+  function chooseStudent(title, text) {
+    setMain(`<h1>${esc(title)}</h1><p>${esc(text)}</p><div class="actions" style="justify-content:flex-start;flex-wrap:wrap">${students().map((s) =>
+      `<button class="btn" type="button" data-pick="${esc(s.id)}">${esc(s.name)}${s.leader ? ' (class leader)' : ''}</button>`).join('') || '<p class="note">No DRP2 students this year.</p>'}</div>`);
+    $$('[data-pick]').forEach((b) => b.addEventListener('click', () => {
+      state.student = b.dataset.pick; try { sessionStorage.setItem('drp.d2student', state.student); } catch (e) {}
+      pickStudent(); route(); setTimeout(prefetch, 50);
+    }));
+  }
+
+  /**
+   * DRP2, all students: the class side by side, as in the legacy Monthly_Report2_All — hours per area
+   * (each student a colour), one chart per posting (TPS, QA, beam checks, chart check, treatment setup …)
+   * by item, the days present / absent and working vs productive days.
+   */
+  const STUDENT_COLORS = ['#00ffff', '#ffff00', '#ff6fd8', '#3ddc84', '#ff9f40', '#b48cff'];
+  function drp2ClassDashboard(d) {
+    const c = d.byStudent, sts = c.students;
+    const h = (m) => Math.round((m || 0) / 6) / 10;
+    const total = sts.reduce((a, s) => a + Object.values(s.hours).reduce((x, y) => x + y, 0), 0);
+    const att = d.attendance.filter((a) => a.pct != null);
+    const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + x.pct, 0) / att.length) / 10 : null;
+    const postings = c.areas.filter((a) => a.paper && a.items.length);
+    setMain(`
+      <div class="toolbar">
+        <div><h1>DRP2 dashboard</h1><div class="sub"><b>All students</b> · ${sts.length} student(s) · clinical training and internship</div></div>
+        <div style="flex:1"></div>${yearLabel()}
+      </div>
+      <div class="grid kpis">
+        <div class="kpi"><div class="label">Students</div><div class="value">${sts.length}</div><div class="hint">${periodLabel()}</div></div>
+        <div class="kpi"><div class="label">Hours (all students)</div><div class="value">${minToHM(total)}</div><div class="hint">hours:minutes</div></div>
+        <div class="kpi"><div class="label">Average per student</div><div class="value">${sts.length ? minToHM(total / sts.length) : '—'}</div></div>
+        <div class="kpi"><div class="label">Average attendance</div><div class="value">${pct(avg)}</div><div class="hint">${sts.length} students</div></div>
+      </div>
+      <div class="panel chart-sheet" style="margin-top:16px"><div class="chart-head"><h2 style="text-align:left">Activity - Hours</h2>${totalBadge(`<b>${minToHM(total)}</b> h`, 'All students together')}</div>
+        <div class="chart-box" style="height:360px"><canvas id="c-cls-areas" aria-label="Hours per area for each student"></canvas></div></div>
+      <div class="grid two">${postings.map((a, i) => `<div class="panel chart-sheet"><div class="chart-head"><h2 style="text-align:left">${i + 1}. ${esc(a.label)}</h2>${totalBadge(`<b>${minToHM(sts.reduce((x, s) => x + (s.hours[a.key] || 0), 0))}</b> h`, 'All students together')}</div>
+        <div class="chart-box"><canvas id="c-cls-${i}" aria-label="${esc(a.label)}: hours per item for each student"></canvas></div></div>`).join('')}</div>
+      <div class="grid two">
+        <div class="panel chart-sheet"><h2>Total Days</h2><div class="chart-box"><canvas id="c-cls-att" aria-label="Days present and absent per student"></canvas></div></div>
+        <div class="panel chart-sheet"><h2>Working Days vs Productive Days</h2><div class="chart-box"><canvas id="c-cls-days" aria-label="Working and productive days per student"></canvas></div>
+          <p class="note" style="color:#c9d7e3;margin:8px 0 0">Working days: days attendance was taken. Productive days: days with at least one activity (with times) logged.</p></div>
+      </div>
+      ${d.checks ? checksPanel(d) : ''}`);
+    const perStudent = (labels, val) => sts.map((s, k) => ({ label: s.name, data: labels.map((x) => val(s, x)), backgroundColor: STUDENT_COLORS[k % STUDENT_COLORS.length], maxBarThickness: 28 }));
+    const opts = { maintainAspectRatio: false, layout: { padding: { top: 22 } }, scales: sheetScales(false),
+      plugins: { legend: { position: 'bottom', labels: { color: '#ffffff', boxWidth: 12 } }, barLabels: { mode: 'top' } } };
+    chart($('#c-cls-areas'), { type: 'bar', data: { labels: c.areas.map((a) => a.label), datasets: perStudent(c.areas, (s, a) => h(s.hours[a.key])) }, options: opts });
+    postings.forEach((a, i) => chart($(`#c-cls-${i}`), { type: 'bar',
+      data: { labels: a.items.map((it) => it.name.replace(/^(QA|Beam Check|Chart Check|Treatment Setup)\s*-?\s*/i, '') || it.code), datasets: perStudent(a.items, (s, it) => h(((s.items || {})[a.key] || {})[it.code])) }, options: opts }));
+    chart($('#c-cls-att'), { type: 'bar', data: { labels: sts.map((s) => s.name), datasets: [
+      { label: 'Present', data: sts.map((s) => s.present), backgroundColor: ATT_COLORS.P, maxBarThickness: 40 },
+      { label: 'Absent', data: sts.map((s) => s.absent), backgroundColor: ATT_COLORS.A, maxBarThickness: 40 }] },
+      options: { ...opts, scales: sheetScales(true), plugins: { ...opts.plugins, barLabels: { mode: 'stack' } } } });
+    chart($('#c-cls-days'), { type: 'bar', data: { labels: sts.map((s) => s.name), datasets: [
+      { label: 'Working days', data: sts.map((s) => s.workingDays), backgroundColor: '#3D85C6', maxBarThickness: 34 },
+      { label: 'Productive days', data: sts.map((s) => s.productiveDays), backgroundColor: '#EA4335', maxBarThickness: 34 }] }, options: opts });
+    { const cp = $('details.checks-panel'); if (cp) cp.addEventListener('toggle', () => { state.checksOpen = cp.open; }); }
+  }
+
   // ---------- Class log ----------
   async function viewLog(year, monthNo) {
     if (!onPage('log')) return;   // the user has moved to another page meanwhile
     const dm = defaultMonth();
     year = Number(year) || dm.year; monthNo = Number(monthNo) || dm.monthNo;
+    if (allStudents()) return chooseStudent('Class log', 'Each DRP2 student has their own class log. Choose a student:');
     const d = await cachedLoad('sessions', { program: state.program, year, month: monthNo }, () => viewLog(year, monthNo));
     if (!d) return;
     const bySlot = {};
@@ -1293,11 +1356,11 @@
         <p>Copies each academic year's records from the previous version of DRP Manager: students, faculty, syllabus,
         class log, attendance, holidays, exams, class tests, assignments and the report-sent log. The previous records are only read, never changed.
         Re-importing a year never creates duplicates and never touches other years; anything entered or edited in DRP Manager is kept.</p>
-        <h3 style="margin:8px 0 4px">DRP1</h3>
-        <div id="imp-years"><div class="loading">Loading…</div></div>
-        <h3 style="margin:16px 0 4px">DRP2 (one record per student)</h3>
-        <p class="note">Each DRP2 student's activities (clinical training, internship), attendance, faculty and holidays. Re-importing a student replaces only that student's imported records.</p>
-        <div id="imp-drp2"><div class="loading">Loading…</div></div>
+        <details class="sect sub-sect"><summary>DRP1<span class="sect-hint">one record per academic year</span></summary><div class="sect-body">
+          <div id="imp-years"><div class="loading">Loading…</div></div></div></details>
+        <details class="sect sub-sect"><summary>DRP2<span class="sect-hint">one record per student</span></summary><div class="sect-body">
+          <p class="note">Each DRP2 student's activities (clinical training, internship), attendance, faculty and holidays. Re-importing a student replaces only that student's imported records.</p>
+          <div id="imp-drp2"><div class="loading">Loading…</div></div></div></details>
         <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
       </div></details>
       <details class="sect"><summary>Database<span class="sect-hint">storage used · reload</span></summary><div class="sect-body">

@@ -22,8 +22,11 @@
       </ul>`],
     ['DRP1 and DRP2', `<p>DRP1 is the first year (classes common to the whole batch); DRP2 is the second year (clinical training and
       internship), where <b>every student's activities are different</b>. A DRP2 year runs from November to December of the next year.</p>
-      <ul><li><b>Admins and faculty</b>: switch with the <b>DRP1 | DRP2</b> buttons at the top. In DRP2, choose the student next to them;
-      the Dashboard, Class log, Reports and Faculty pages then show that student. The Attendance page shows the whole class.
+      <ul><li><b>Admins and faculty</b>: switch with the <b>DRP1 | DRP2</b> buttons at the top. In DRP2, choose the student next to them, or
+      <b>All students</b> (the default): the Dashboard then shows the whole class side by side, as in the monthly DRP2 report
+      (Activity - Hours, one chart per posting such as TPS, QA, beam checks, chart check and treatment setup, Total Days, and Working
+      vs Productive Days), each student in their own colour. With one student chosen, the Dashboard, Class log, Reports and Faculty
+      pages show that student; the Class log always needs a student. The Attendance page shows the whole class.
       Syllabus, Exams, Class tests and Assignments are DRP1 pages and are hidden in DRP2.</li>
       <li><b>DRP2 students</b> go straight to their own DRP2 pages. In the Class log they add and edit their own activities
       (click an empty cell). Activities marked <span class="tag class-tag">Class</span> are common to the whole class.</li>
