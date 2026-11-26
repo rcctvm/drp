@@ -14,6 +14,8 @@
 
   const state = { role: null, cfg: null, charts: [], seq: 0, program: 'DRP1' };
   const isAdmin = () => state.role === 'admin';
+  // Admins and faculty see every student's records; only admins edit.
+  const seesAll = () => state.role === 'admin' || state.role === 'faculty';
 
   // ---------- page cache (stale-while-revalidate) ----------
   // Pages open instantly from memory (and, after a reload, from this browser's storage); a
@@ -60,7 +62,8 @@
       ['tasks', { program: p, kind: 'Assignment' }],
       ['calendar', { program: p }],
       ['monthlyReport', { program: p, year: pm.year, month: pm.monthNo }],
-      ...(isAdmin() ? [['reportLog', { program: p }], ['faculty', { program: p }]] : [['reportCard', { studentId: state.cfg.me.studentId }]])
+      ...(isAdmin() ? [['reportLog', { program: p }]] : []),
+      ...(seesAll() ? [['faculty', { program: p }]] : [['reportCard', { studentId: state.cfg.me.studentId }]])
     ].filter(([a, prm]) => { const h = cache.get(pageKey(a, prm)); return !h || Date.now() - h.at > FRESH_MS; });
     if (!want.length) return;
     try {
@@ -406,8 +409,8 @@
   }
   function renderBadge() {
     const me = state.cfg.me || {};
-    $('#role-badge').textContent = (isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · student`) + (state.batch ? ` · ${state.batch}` : '');
-    $('#role-badge').title = 'Academic year shown: ' + (state.batch || '') + '. Change it on the Dashboard or in Settings.';
+    $('#role-badge').textContent = (isAdmin() ? `${state.username} · admin` : `${me.name || state.username} · ${state.role === 'faculty' ? 'faculty' : 'student'}`) + (state.batch ? ` · ${state.batch}` : '');
+    $('#role-badge').title = 'Academic year shown: ' + (state.batch || '') + '. Change it in Settings.';
   }
   /** "updated 25 Nov 2026, 18:42 (dd9313c)" — stamped on every website publish (js/build.js). */
   function buildLabel() {
@@ -427,6 +430,7 @@
     $('#login-view').hidden = true;
     $('#app-view').hidden = false;
     document.body.classList.toggle('is-admin', isAdmin());
+    document.body.classList.toggle('sees-all', seesAll());
     renderBadge();
     if (state.cfg.settings.department) $('#dept-line').textContent = state.cfg.settings.department;
     renderFooter();
@@ -449,7 +453,7 @@
     if (!state.role) return;
     const [, name = 'dashboard', ...args] = (location.hash || '#/dashboard').split('/');
     const view = VIEWS[name] || viewDashboard;
-    if (name === 'faculty' && !isAdmin()) { location.replace('#/dashboard'); return; }
+    if (name === 'faculty' && !seesAll()) { location.replace('#/dashboard'); return; }
     state.seq++;
     $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
     document.body.className = document.body.className.replace(/\bview-\S+/g, '').trim() + ' view-' + (VIEWS[name] ? name : 'dashboard');
@@ -480,8 +484,8 @@
         <div class="kpi"><div class="label">Teaching hours</div><div class="value">${minToHM(d.totals.minutes)}</div><div class="hint">hours:minutes · target ${fmt(d.targets.theory)} theory</div></div>
         <div class="kpi"><div class="label">Sessions logged</div><div class="value">${fmt(d.totals.sessions)}</div></div>
         <div class="kpi"><div class="label">Syllabus topics taught</div><div class="value">${fmt(d.topicsCovered)}<small style="font-size:16px;color:var(--muted)"> / ${fmt(d.topicsTotal)}</small></div></div>
-        <div class="kpi"><div class="label">${isAdmin() ? 'Average attendance' : 'My attendance'}</div><div class="value">${pct(isAdmin() ? avg : (att[0] ? att[0].pct : null))}</div>
-          <div class="hint">${isAdmin() ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
+        <div class="kpi"><div class="label">${seesAll() ? 'Average attendance' : 'My attendance'}</div><div class="value">${pct(seesAll() ? avg : (att[0] ? att[0].pct : null))}</div>
+          <div class="hint">${seesAll() ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
       </div>
       <div class="grid two" style="margin-top:16px">
         <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
@@ -959,7 +963,7 @@
 
   // ---------- Reports ----------
   async function viewReports(tab = 'monthly', a, b) {
-    const tabs = [['monthly', 'Monthly report'], ['card', isAdmin() ? 'Student report card' : 'My report card'], ...(isAdmin() ? [['log', 'Reports sent']] : [])];
+    const tabs = [['monthly', 'Monthly report'], ['card', seesAll() ? 'Student report card' : 'My report card'], ...(isAdmin() ? [['log', 'Reports sent']] : [])];
     const head = `<div class="toolbar no-print" style="gap:6px">${tabs.map(([k, l]) => `<a class="btn ${k === tab ? 'primary' : ''}" href="#/reports/${k}">${l}</a>`).join('')}</div>`;
     if (tab === 'card') return reportCard(head, a);
     if (tab === 'log' && isAdmin()) return reportLog(head);
@@ -1003,7 +1007,7 @@
   }
   async function reportCard(head, studentId) {
     const list = students();
-    if (!isAdmin()) studentId = state.cfg.me.studentId;
+    if (!seesAll()) studentId = state.cfg.me.studentId;
     if (!studentId) studentId = list[0] && list[0].id;
     if (!studentId) { setMain(head + '<div class="empty">No students yet.</div>'); return; }
     const d = await cachedLoad('reportCard', { studentId }, () => reportCard(head, studentId));
@@ -1012,7 +1016,7 @@
     const series = [...new Set(d.exams.map((e) => e.series))];
     setMain(`${head}
       <div class="toolbar no-print"><div style="flex:1"></div>
-        ${isAdmin() ? `<div class="field"><label for="rc-st">Student</label><select id="rc-st">${list.map((x) => `<option value="${esc(x.id)}" ${x.id === studentId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+        ${seesAll() ? `<div class="field"><label for="rc-st">Student</label><select id="rc-st">${list.map((x) => `<option value="${esc(x.id)}" ${x.id === studentId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
         <button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
       <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Report card — ${esc(st.name)}</h2><div>${esc(st.program)} · Batch ${esc(st.batch)}</div></div>
       <div class="grid kpis print-block">
@@ -1206,22 +1210,27 @@
     const body = $('#users-body');
     const studs = Object.values(state.cfg.students).flat();
     const nameOf = (id) => (studs.find((s) => s.id === id) || {}).name || id;
-    body.innerHTML = `<div class="table-wrap"><table><thead><tr><th>User name</th><th>Role</th><th>Student</th><th>Active</th><th>Last sign-in</th><th></th></tr></thead>
-      <tbody>${users.map((u) => `<tr><td class="tech">${esc(u.username)}</td><td>${esc(u.role)}</td><td>${esc(u.studentId ? nameOf(u.studentId) : '')}</td><td>${u.active ? 'Yes' : 'No'}</td><td>${u.lastLogin ? new Date(u.lastLogin).toLocaleString('en-GB') : '—'}</td>
+    const facs = (state.cfg.faculty || []).filter((f) => f.type !== 'Activity');
+    const facName = (a) => (facs.find((f) => f.abbr === a) || {}).name || a;
+    body.innerHTML = `<div class="table-wrap"><table><thead><tr><th>User name</th><th>Role</th><th>Student / faculty member</th><th>Active</th><th>Last sign-in</th><th></th></tr></thead>
+      <tbody>${users.map((u) => `<tr><td class="tech">${esc(u.username)}</td><td>${esc(u.role)}</td><td>${esc(u.studentId ? nameOf(u.studentId) : u.facultyAbbr ? facName(u.facultyAbbr) : '')}</td><td>${u.active ? 'Yes' : 'No'}</td><td>${u.lastLogin ? new Date(u.lastLogin).toLocaleString('en-GB') : '—'}</td>
         <td><button class="btn small" type="button" data-user="${esc(u.username)}">Edit</button></td></tr>`).join('')}</tbody></table></div>
       <div class="actions"><button class="btn primary" type="button" id="user-add">Add user</button></div>
-      <p class="note">Students see the shared ${esc(state.program)} class log, syllabus and calendar, and only their own attendance, marks and report card.</p>`;
+      <p class="note"><b>Students</b> see the shared ${esc(state.program)} class log, syllabus and calendar, and only their own attendance, marks and report card.
+      <b>Faculty</b> see everything, including every student's attendance, marks and report card, and their own teaching hours, but cannot change anything.
+      <b>Admins</b> see and edit everything.</p>`;
     const edit = (u) => formDialog({
       title: u ? `Edit ${u.username}` : 'Add user',
       body: `<div class="form-grid">
         <div class="field"><label for="u-name">User name</label><input id="u-name" name="username" value="${esc(u ? u.username : '')}" autocapitalize="none" required></div>
-        <div class="field"><label for="u-role">Role</label><select id="u-role" name="role"><option value="student" ${u && u.role === 'student' ? 'selected' : ''}>Student</option><option value="admin" ${u && u.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>
-        <div class="field"><label for="u-st">Student</label><select id="u-st" name="studentId"><option value="">—</option>${studs.map((s) => `<option value="${esc(s.id)}" ${u && u.studentId === s.id ? 'selected' : ''}>${esc(s.name)} (${esc(s.id)}${s.batch ? ', ' + esc(s.batch) : ''})</option>`).join('')}</select></div>
+        <div class="field"><label for="u-role">Role</label><select id="u-role" name="role"><option value="student" ${u && u.role === 'student' ? 'selected' : ''}>Student</option><option value="faculty" ${u && u.role === 'faculty' ? 'selected' : ''}>Faculty</option><option value="admin" ${u && u.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>
+        <div class="field" data-for="student"><label for="u-st">Student</label><select id="u-st" name="studentId"><option value="">—</option>${studs.map((s) => `<option value="${esc(s.id)}" ${u && u.studentId === s.id ? 'selected' : ''}>${esc(s.name)} (${esc(s.id)}${s.batch ? ', ' + esc(s.batch) : ''})</option>`).join('')}</select></div>
+        <div class="field" data-for="faculty"><label for="u-fac">Faculty member</label><select id="u-fac" name="facultyAbbr"><option value="">—</option>${facs.map((f) => `<option value="${esc(f.abbr)}" ${u && u.facultyAbbr === f.abbr ? 'selected' : ''}>${esc(f.name)} (${esc(f.abbr)})</option>`).join('')}</select></div>
         <div class="field"><label for="u-pw">${u ? 'New password (leave empty to keep)' : 'Password'}</label><input id="u-pw" name="password" type="password" autocomplete="new-password" ${u ? '' : 'required'}></div>
       </div>
       <label class="switch-row" style="margin-top:12px"><input type="checkbox" name="active" ${!u || u.active ? 'checked' : ''}> Active (can sign in)</label>`,
       onSave: async (f) => {
-        const res = await write('saveUser', { user: { original: u ? u.username : undefined, username: f.username.value, role: f.role.value, studentId: f.studentId.value, password: f.password.value, active: f.active.checked } });
+        const res = await write('saveUser', { user: { original: u ? u.username : undefined, username: f.username.value, role: f.role.value, studentId: f.studentId.value, facultyAbbr: f.facultyAbbr.value, password: f.password.value, active: f.active.checked } });
         if (!res) return;
         if (res.me) API.setToken(res.me.token, true);
         toast('User saved.'); renderUsers(res.users); return true;
@@ -1232,8 +1241,14 @@
         if (res) { toast('Deleted.'); renderUsers(res.users); return true; }
       } : null
     });
-    $('#user-add').onclick = () => edit(null);
-    $$('[data-user]', body).forEach((b) => b.addEventListener('click', () => edit(users.find((x) => x.username === b.dataset.user))));
+    const editUser = (u) => {
+      const f = edit(u);
+      // Show only the field that matters for the chosen role.
+      const sync = () => $$('[data-for]', f).forEach((el) => { el.hidden = el.dataset.for !== f.role.value; });
+      f.role.addEventListener('change', sync); sync();
+    };
+    $('#user-add').onclick = () => editUser(null);
+    $$('[data-user]', body).forEach((b) => b.addEventListener('click', () => editUser(users.find((x) => x.username === b.dataset.user))));
   }
   /**
    * Editable table. opts.scope 'year' saves only the selected academic year's part (Calendar page);

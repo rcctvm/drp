@@ -49,7 +49,9 @@ nav.tabs a {
 nav.tabs a:hover { background: var(--teal-3); }
 nav.tabs a.active { background: var(--cyan); color: #00262c; font-weight: 600; }
 nav.tabs a.admin-only { display: none; }
-body.is-admin nav.tabs a.admin-only { display: inline-block; }
+nav.tabs a.staff-only { display: none; }
+body.is-admin nav.tabs a.admin-only, body.sees-all nav.tabs a.staff-only { display: inline-block; }
+.field[hidden] { display: none !important; }
 
 main { max-width: var(--page); margin: 0 auto; padding: 18px 16px 60px; }
 h1, h2, h3 { color: var(--cyan); margin: 0 0 12px; font-weight: 600; }
