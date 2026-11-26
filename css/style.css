@@ -434,3 +434,10 @@ details.check > summary .sect-hint { font-weight: 400; margin-left: 10px; opacit
 .panel.chart-sheet .chart-total { color: #ffffff; }
 details.sem-sect > summary { font-size: 18px; }
 details.sem-sect > .sect-body > details.sect { margin-left: 0; }
+/* Settings › Database: storage used */
+.storage-head { margin: 4px 0 8px; }
+.storage-pct { font-weight: 700; font-size: 18px; margin-left: 6px; }
+.storage-pct.good { color: var(--ok, #3ddc84); } .storage-pct.mid { color: #FF9900; } .storage-pct.bad { color: #ff5a6e; }
+.storage-bar { height: 12px; border-radius: 6px; background: rgba(255,255,255,.12); overflow: hidden; }
+.storage-bar i { display: block; height: 100%; }
+.storage-bar i.good { background: var(--ok, #3ddc84); } .storage-bar i.mid { background: #FF9900; } .storage-bar i.bad { background: #ff5a6e; }

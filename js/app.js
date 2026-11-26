@@ -1108,7 +1108,7 @@
     if (!rows) return;
     const cur = defaultMonth().key;
     setMain(`${head}
-      <h1>Monthly reports sent</h1><div class="sub">Tick a month once its report has been sent. The file name follows the legacy convention.</div>
+      <h1>Monthly reports sent</h1><div class="sub">Tick a month once its report has been sent. The file name follows the usual naming convention.</div>
       <div class="table-wrap"><table class="fit"><thead><tr><th style="width:150px">Month</th><th>File name</th><th style="width:90px">Sent?</th><th style="width:150px">Sent on</th><th style="width:110px"></th></tr></thead>
         <tbody>${rows.map((r) => { const k = `${r.year}-${String(r.monthNo).padStart(2, '0')}`; return `<tr>
           <td>${esc(r.label)}</td><td class="wrap">${esc(r.fileName)}</td>
@@ -1188,17 +1188,18 @@
     setMain(`<h1>Settings</h1>
       ${yearPanel()}
       <div id="display-box">${displayPanel()}</div>
-      <details class="sect" id="imp-sect"><summary>Import from the legacy sheets<span class="sect-hint">read-only · every academic year</span></summary><div class="sect-body">
-        <p>Copies each academic year's data from its Google Sheet <b>DRP Manager</b> (Drive › DRP Manager › DRP1 › <i>year</i>): students, faculty, syllabus,
-        class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log. The legacy sheets are only read, never changed.
+      <details class="sect" id="imp-sect"><summary>Import previous records<span class="sect-hint">read-only · every academic year</span></summary><div class="sect-body">
+        <p>Copies each academic year's records from the previous version of DRP Manager: students, faculty, syllabus,
+        class log, attendance, holidays, exams, class tests, assignments and the report-sent log. The previous records are only read, never changed.
         Re-importing a year never creates duplicates and never touches other years; anything entered or edited in DRP Manager is kept.</p>
         <div id="imp-years"><div class="loading">Loading…</div></div>
         <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
       </div></details>
-      <details class="sect"><summary>Data from the Google Sheet<span class="sect-hint">after editing the sheet by hand</span></summary><div class="sect-body">
-        <p>DRP Manager keeps a fast copy of the DRP Google Sheet. Changes made in DRP Manager show at once; changes typed directly into the
-        Google Sheet show within 6 hours, or straight away after pressing this button.</p>
-        <button class="btn" type="button" id="reload-data">Reload data from the sheet</button></div></details>
+      <details class="sect"><summary>Database<span class="sect-hint">storage used · reload</span></summary><div class="sect-body">
+        <div id="storage-box"><div class="loading">Loading…</div></div>
+        <p>DRP Manager keeps a fast copy of the database. Changes made in DRP Manager show at once; changes made directly in the
+        database show within 6 hours, or straight away after pressing this button.</p>
+        <button class="btn" type="button" id="reload-data">Reload data from the database</button></div></details>
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
       ${accountPanel()}`);
@@ -1207,18 +1208,36 @@
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
     wireImport();
-    $('#reload-data').onclick = async () => { if ((await write('refreshData', {})) !== undefined) { toast('Data reloaded from the Google Sheet.'); await refreshConfig(); } };
+    const dbSect = $('#storage-box').closest('details');
+    dbSect.addEventListener('toggle', () => { if (dbSect.open) loadStorage(); });
+    $('#reload-data').onclick = async () => { if ((await write('refreshData', {})) !== undefined) { toast('Data reloaded from the database.'); await refreshConfig(); } };
+  }
+  /**
+   * Settings › Database: storage used. The database holds at most 10 million cells; every table counts
+   * its full grid (rows × columns), including empty rows kept ready for new records.
+   */
+  async function loadStorage() {
+    const box = $('#storage-box');
+    if (!box) return;
+    let st;
+    try { st = await API.call('storage'); } catch (e) { box.innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
+    const pct = st.pct, level = pct >= 90 ? 'bad' : pct >= 70 ? 'mid' : 'good';
+    box.innerHTML = `<div class="storage-head"><b>Storage used:</b> ${fmt(st.used)} of ${fmt(st.limit)} cells <span class="storage-pct ${level}">${pct}%</span></div>
+      <div class="storage-bar"><i class="${level}" style="width:${Math.min(100, Math.max(pct, 0.5))}%"></i></div>
+      <p class="note">${pct >= 90 ? 'Nearly full: ask the developer to archive old years.' : pct >= 70 ? 'More than 70% used: plan to archive old years.' : 'Plenty of room.'} Each table counts its full size, including empty rows kept ready for new records.</p>
+      <details class="topic"><summary>By table</summary><div class="table-wrap"><table class="fit"><thead><tr><th>Table</th><th class="num">Records</th><th class="num">Cells</th><th class="num">Share</th></tr></thead>
+        <tbody>${st.tabs.slice().sort((a, b) => b.cells - a.cells).map((t) => `<tr><td>${esc(t.name)}</td><td class="num">${fmt(t.rows)}</td><td class="num">${fmt(t.cells)}</td><td class="num">${st.used ? Math.round(1000 * t.cells / st.used) / 10 : 0}%</td></tr>`).join('')}</tbody></table></div></details>`;
   }
   /** Settings › Import: one row per academic year, Import / Import all, with step-by-step progress. */
   function wireImport() {
     const det = $('#imp-sect'), box = $('#imp-years'), out = $('#imp-out');
-    const steps = [['master', 'Students, faculty, syllabus, holidays, report log'], ['sessions', 'Class log (month tabs)'], ['attendance', 'Attendance'], ['assessments', 'Exams, class tests, assignments']];
+    const steps = [['master', 'Students, faculty, syllabus, holidays, report log'], ['sessions', 'Class log'], ['attendance', 'Attendance'], ['assessments', 'Exams, class tests, assignments']];
     const line = (k, v) => `    ${k}: ${typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ') : v}`;
     let list = [], busy = false;
     const draw = () => {
-      box.innerHTML = `<div class="table-wrap"><table class="fit"><thead><tr><th style="width:120px">Academic year</th><th>Legacy sheet (spreadsheet ID)</th><th style="width:190px">Last imported</th><th style="width:110px"></th></tr></thead>
+      box.innerHTML = `<div class="table-wrap"><table class="fit"><thead><tr><th style="width:120px">Academic year</th><th>Source ID</th><th style="width:190px">Last imported</th><th style="width:110px"></th></tr></thead>
         <tbody>${list.map((y, i) => `<tr><td class="tech">${esc(y.year)}</td>
-          <td><input data-sheet="${i}" value="${esc(y.sheetId)}" aria-label="Legacy sheet ID for ${esc(y.year)}" placeholder="spreadsheet ID"></td>
+          <td><input data-sheet="${i}" value="${esc(y.sheetId)}" aria-label="Source ID for ${esc(y.year)}" placeholder="source ID"></td>
           <td>${y.lastImport ? esc(new Date(y.lastImport).toLocaleString('en-GB')) : '<span class="note">never</span>'}</td>
           <td><button class="btn small" type="button" data-imp="${i}">Import</button></td></tr>`).join('')}</tbody></table></div>
         <div class="actions"><button class="btn primary" type="button" id="imp-all">Import all years</button></div>`;
@@ -1230,7 +1249,7 @@
     async function run(idx) {
       if (busy || !idx.length) return;
       const names = idx.map((i) => list[i].year).join(', ');
-      if (!(await confirmBox('Import from the legacy sheets', `Import ${names}? Each year takes up to a minute.`, 'Import'))) return;
+      if (!(await confirmBox('Import previous records', `Import ${names}? Each year takes up to a minute.`, 'Import'))) return;
       busy = true; out.hidden = false;
       $$('button', box).forEach((b) => { b.disabled = true; });
       const log = [];

@@ -3,7 +3,7 @@
   const SECTIONS = [
     ['About', `
       <p><b>DRP Manager</b> runs the Diploma in Radiological Physics (DRP) course of the Division of Radiation Physics,
-      Regional Cancer Centre, Thiruvananthapuram. It replaces the <i>DRP Manager</i> Google Sheet: the class log, attendance,
+      Regional Cancer Centre, Thiruvananthapuram. It replaces the previous version of DRP Manager: the class log, attendance,
       syllabus coverage, internal exams, class tests, assignments, the academic calendar and the monthly report.</p>
       <p>Version <b id="about-version">—</b> · <span id="about-build">—</span>.</p>`],
     ['Who sees what', `
@@ -30,7 +30,7 @@
       when it was last taught and by whom, and the unit's syllabus text. Practical experiments are listed under the Lab courses. Use the search box to find
       a unit. The curriculum's official hours are shown next to RCC's plan for reference.</p>`],
     ['Exams, class tests and assignments', `<p>Internal exams are grouped by series (Internal 1, 2, 3). Class tests are marked out of a maximum;
-      assignments are rated 1–5 stars, as in the old sheet. Admins click a row to enter marks, or <b>Edit</b> to change the details.</p>`],
+      assignments are rated 1–5 stars, as in the previous version. Admins click a row to enter marks, or <b>Edit</b> to change the details.</p>`],
     ['Academic years', `<p>Everything in DRP Manager belongs to an academic year (e.g. 2025-2026): the class log, attendance, students,
       exams, class tests, assignments, the calendar's events and the monthly-report log. The <b>current</b> year is shown by default every time
       DRP Manager is opened; switch to another year in <b>Settings › Academic year</b> (the only place it is changed; the year
@@ -45,13 +45,13 @@
     ['Reports', `<ul><li><b>Monthly report</b>: total days and hours, attendance (T, P, A, L, %), topics covered, faculty hours and the full class log for the month. Print or save as PDF.</li>
       <li><b>Report card</b>: one student's details, attendance by month, exam marks, class tests and assignments.</li>
       <li><b>Reports sent</b> (admin): tick each month once the monthly report has been sent.</li></ul>`],
-    ['Faculty', `<p>Admins: lecture days and hours for every faculty member and activity. Faculty: their own. By month, with the list of lectures and topics, like the old F1…F20 tabs.</p>`],
+    ['Faculty', `<p>Admins: lecture days and hours for every faculty member and activity. Faculty: their own. By month, with the list of lectures and topics.</p>`],
     ['Settings', `<ul><li><b>Display</b>: choose the font (Default or Courier New) and the page width (Comfortable, centred; or Full width for wide tables). The choice is kept on this device. Admins can make their choice the default for everyone.</li>
-      <li><b>Import from the legacy sheet</b> (admin): reads the old DRP Manager sheet (never changes it) and copies its data. Safe to run again. Anything entered or edited in DRP Manager is kept.</li>
+      <li><b>Import previous records</b> (admin): reads the records of the previous version of DRP Manager (never changes them) and copies them. Safe to run again. Anything entered or edited in DRP Manager is kept.</li>
       <li><b>Users</b> (admin): add admin, faculty and student accounts. Each faculty account is linked to one faculty member, and each student account to one student.</li>
       <li><b>Students, Faculty, Papers, Topics, Holidays, Application settings</b> (admin): edit the lists. The batch start and end dates in Application settings decide which months are shown.</li>
       <li><b>My account</b>: change your user name or password.</li></ul>`],
-    ['Privacy', `<p>The website holds no data. Everything is stored in the DRP Google Sheet and served by the DRP Apps Script server after you sign in.
+    ['Privacy', `<p>The website holds no data. Everything is stored in the DRP Manager database and served by the DRP Manager server after you sign in.
       Passwords are stored only as salted hashes. Five wrong passwords lock that user name for 15 minutes.</p>`]
   ];
 
