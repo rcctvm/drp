@@ -1153,7 +1153,7 @@
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
       ${accountPanel()}`);
     wireAccount(); wireDisplay(); wireYearPicker('set-year');
-    renderTable('Batches', d.Batches || [], $('#years-table'), { onSaved: async () => { await refreshConfig(); initYear(); viewSettings(); } });
+    renderTable('Batches', (d.Batches || []).slice().sort((a, b) => String(b.ID).localeCompare(String(a.ID))), $('#years-table'), { onSaved: async () => { await refreshConfig(); initYear(); viewSettings(); } });
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
     wireImport();
