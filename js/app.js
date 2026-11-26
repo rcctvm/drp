@@ -1253,7 +1253,10 @@
     Batches: { title: 'Academic years', hint: 'One row per academic year (batch), e.g. 2026-2027 with its first and last month. The current year is chosen from today’s date; tick Current only to decide between two overlapping years.', cols: [
       ['ID', 'Academic year', 120], ['Start', 'Starts', 150, 'date'], ['End', 'Ends', 150, 'date'], ['Curriculum', 'Curriculum', 200, 'curriculum'], ['Current', 'Current', 70, 'bool'], ['Notes', 'Notes', 240]] },
     Students: { title: 'Students', hint: 'DRP1 and DRP2 students of every academic year. The ID links a student to their sign-in account; the academic year decides where they appear. Class leader (DRP2, one per class): logs the common activities and marks the class attendance.', cols: [
-      ['ID', 'ID', 90], ['Program', 'Programme', 90, ['DRP1', 'DRP2']], ['Name', 'Name', 180], ['Batch', 'Academic year', 120, 'year'], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Guardian', 'Guardian', 140], ['Address', 'Address', 200], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool'], ['Leader', 'Class leader', 90, 'flag']] },
+      // The columns used most come first (name and class leader visible without scrolling); contact details last.
+      ['Batch', 'Academic year', 125, 'year'], ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['ID', 'ID', 95], ['Name', 'Name', 170],
+      ['Leader', 'Class leader', 70, 'flag'], ['Active', 'Active', 55, 'bool'], ['Order', 'Order', 50], ['Email', 'E-mail', 190],
+      ['Phone', 'Phone', 110], ['Guardian', 'Guardian', 130], ['Address', 'Address', 180]] },
     Faculty: { title: 'Faculty / activities', hint: 'Activities (Seminar, Paper Presentation, Online Learning, Exam) are listed with faculty so they can be chosen for a session.', cols: [
       ['Code', 'Code', 70], ['Abbr', 'Abbr.', 70], ['Name', 'Name', 200], ['Type', 'Type', 100, ['Faculty', 'Activity']], ['Email', 'E-mail', 200], ['Phone', 'Phone', 120], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Papers: { title: 'Papers / courses', hint: 'Papers (yearly scheme) and courses (semester scheme from 2026-27). Curriculum decides which academic years use them. Hours = RCC’s plan; Official = the curriculum’s figure.', cols: [
@@ -1264,7 +1267,7 @@
       ['Curriculum', 'Curriculum', 150, 'curriculum'], ['Code', 'Code', 90], ['Name', 'Name', 300], ['PaperCode', 'Paper / course', 100], ['Subject', 'Subject', 110], ['Kind', 'Kind', 100, ['', 'Unit', 'Experiment']],
       ['Lectures', 'Lect. h', 60], ['Tutorials', 'Tut. h', 60], ['Order', 'Order', 60], ['Active', 'Active', 60, 'bool']] },
     Events: { title: 'Academic calendar events', hint: 'Numbered key of the academic calendar. Dates = optional list (yyyy-mm-dd, comma separated) that replaces Start–End, e.g. exam days only. Colour as #RRGGBB.', cols: [
-      ['Batch', 'Academic year', 110, 'year'], ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Title', 'Event', 300], ['Start', 'Start', 150, 'date'], ['End', 'End', 150, 'date'], ['Dates', 'Only these dates (optional)', 220], ['Color', 'Colour', 90, 'color'], ['SkipSundays', 'Skip Sundays', 70, 'bool']] },
+      ['Batch', 'Academic year', 125, 'year'], ['Program', 'Programme', 80, ['DRP1', 'DRP2']], ['No', 'No.', 50], ['Title', 'Event', 300], ['Start', 'Start', 150, 'date'], ['End', 'End', 150, 'date'], ['Dates', 'Only these dates (optional)', 220], ['Color', 'Colour', 90, 'color'], ['SkipSundays', 'Skip Sundays', 70, 'bool']] },
     Holidays: { title: 'Holidays', hint: 'RCC closed and compensatory holidays (shaded in the class log, attendance and calendar).', cols: [
       ['Date', 'Date', 150, 'date'], ['Name', 'Holiday', 280], ['Type', 'Type', 140, ['Closed', 'Compensatory']]] },
     Settings: { title: 'Application settings', hint: 'General settings. Academic years are set under Academic years.', cols: [['Key', 'Key', 200], ['Value', 'Value', 420]] }
@@ -1309,7 +1312,10 @@
     wireAccount(); wireDisplay(); wireYearPicker('set-year');
     renderTable('Batches', (d.Batches || []).slice().sort((a, b) => String(b.ID).localeCompare(String(a.ID))), $('#years-table'), { onSaved: async () => { await refreshConfig(); initYear(); viewSettings(); } });
     renderUsers(users);
-    $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
+    // Students: newest academic year first, then DRP1 before DRP2, then the student's order.
+    const sorted = (t, rows) => (t !== 'Students' ? rows : rows.slice().sort((x, y) => String(y.Batch).localeCompare(String(x.Batch))
+      || String(x.Program).localeCompare(String(y.Program)) || (Number(x.Order) || 0) - (Number(y.Order) || 0) || String(x.ID).localeCompare(String(y.ID))));
+    $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, sorted(det.dataset.table, d[det.dataset.table] || []), $('.sect-body', det)); } }));
     wireImport();
     wireImportDrp2();
     $('#trim-data').onclick = async () => {
@@ -1418,7 +1424,7 @@
           try { res = await write('importDrp2', { year: r.year, no: r.no }); }
           catch (e) { log.push(`${n + 1}/${idx.length}  ${r.year} S${r.no} ${r.name} — FAILED: ${e.message}`); continue; }
           if (!res) return;
-          log.push(`${n + 1}/${idx.length}  ${res.academicYear} ${res.student} (${res.studentId}) — ${res.sessions.imported} activities, ${res.attendance.imported} attendance marks${res.newTopics.topics ? `, ${res.newTopics.topics} new topics` : ''}`);
+          log.push(`${n + 1}/${idx.length}  ${res.academicYear} ${res.student} (${res.studentId}) — ${res.sessions.imported} activities, ${res.attendance.imported} attendance marks${res.attendanceFor ? ` (${res.attendanceFor})` : ''}${res.newTopics.topics ? `, ${res.newTopics.topics} new topics` : ''}`);
           (res.notes || []).forEach((t) => log.push('      Note: ' + t));
           out.textContent = log.join('\n');
         }
