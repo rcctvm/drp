@@ -371,10 +371,9 @@ table.acal-month td[title] { cursor: help; }
 @media (max-width: 1100px) { .acal-grid { grid-template-columns: repeat(2, 1fr); } .acal-key { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .acal-grid { grid-template-columns: 1fr; } .acal-head { flex-direction: column; } .acal-logo { border: none; } .acal-hols { grid-template-columns: 1fr; } }
 @media print {
-  /* Academic calendar: printed exactly as on screen (same layout and colours), on ONE page, scaled to fit A3
-     portrait (A3 keeps every label readable). Uses its own named page so other reports keep A4 landscape. */
-  @page calendar { size: A3 portrait; margin: 6mm; }
-  .acal { page: calendar; width: 1180px; max-width: none; margin: 0; zoom: var(--print-zoom, 0.89); break-inside: auto; break-after: avoid; }
+  /* Academic calendar: printed exactly as on screen (same layout and colours), on ONE A3 portrait page.
+     The A3 page size is set by js/calendar.js only while the calendar is printed (reports keep A4 landscape). */
+  .acal { width: 1180px; max-width: none; margin: 0; zoom: var(--print-zoom, 0.89); break-inside: auto; break-after: avoid; }
   body.view-calendar main > :not(.acal) { display: none !important; }
   .acal, .acal * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body.view-calendar main { padding: 0; }

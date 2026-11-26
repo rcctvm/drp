@@ -102,23 +102,39 @@
   }
 
   /**
-   * Printing: scale the calendar so ALL of it (months, key and holiday tables) fits ONE A3 portrait
-   * page. Measured just before printing in the print layout (4 months per row, 1180 px wide).
+   * Printing: ONE A3 portrait page with everything on it (months, key and holiday tables).
+   * While the calendar is printed, the whole document's page is A3 portrait (a style added just for
+   * the print and removed afterwards), because print dialogs use one paper size for the whole
+   * document; the reports' A4 landscape would otherwise split the calendar over 2-3 pages. The
+   * calendar is then scaled to fit that page.
    */
   const A3 = { widthPx: (297 - 12) / 25.4 * 96, heightPx: (420 - 12) / 25.4 * 96 };   // 6 mm margins
+  const PAGE_STYLE_ID = 'acal-print-page';
   function fitForPrint() {
-    document.querySelectorAll('.acal').forEach((el) => {
+    const cals = document.querySelectorAll('.acal');
+    if (!cals.length) return;
+    if (!document.getElementById(PAGE_STYLE_ID)) {
+      const st = document.createElement('style');
+      st.id = PAGE_STYLE_ID;
+      st.textContent = '@page { size: A3 portrait; margin: 6mm; }';
+      document.head.appendChild(st);   // last in the document, so it wins over the A4 landscape rule
+    }
+    cals.forEach((el) => {
       el.classList.add('acal-measure');
       const w = el.offsetWidth, h = el.offsetHeight;
       el.classList.remove('acal-measure');
-      const zoom = Math.min(A3.widthPx / w, (A3.heightPx - 8) / h);
+      const zoom = Math.min(A3.widthPx / w, A3.heightPx / h) * 0.98;   // 2% spare so it never spills onto a 2nd page
       el.style.setProperty('--print-zoom', String(Math.max(0.3, Math.floor(zoom * 1000) / 1000)));
     });
   }
+  function afterPrint() { const st = document.getElementById(PAGE_STYLE_ID); if (st) st.remove(); }
+  /** The Print button: same as Ctrl+P on the calendar page. */
+  function print() { fitForPrint(); window.print(); }
   window.addEventListener('beforeprint', fitForPrint);
+  window.addEventListener('afterprint', afterPrint);
   if (window.matchMedia) {
     const mq = window.matchMedia('print');
-    if (mq.addEventListener) mq.addEventListener('change', (e) => { if (e.matches) fitForPrint(); });
+    if (mq.addEventListener) mq.addEventListener('change', (e) => { if (e.matches) fitForPrint(); else afterPrint(); });
   }
 
   /**
@@ -160,5 +176,5 @@
     return 'downloaded';
   }
 
-  window.DrpCalendar = { render, fitForPrint, shareImage, toImage };
+  window.DrpCalendar = { render, fitForPrint, print, shareImage, toImage };
 })();

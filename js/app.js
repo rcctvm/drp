@@ -457,7 +457,7 @@
     state.seq++;
     $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === name));
     document.body.className = document.body.className.replace(/\bview-\S+/g, '').trim() + ' view-' + (VIEWS[name] ? name : 'dashboard');
-    Promise.resolve(view(...args.map(decodeURIComponent))).catch(() => {});
+    Promise.resolve(view(...args.map(decodeURIComponent))).catch((e) => { console.error('View ' + name + ' failed:', e); });
   }
   window.addEventListener('hashchange', route);
 
@@ -912,7 +912,7 @@
     if (!d) return;
     setMain(`
       <div class="toolbar no-print"><div><h1>Academic calendar</h1><div class="sub">${esc(state.program)} · academic year ${esc(year().id)} · hover a date for details${isAdmin() ? ' · edit this year’s holidays and events below the calendar' : ''}</div></div>
-        <div style="flex:1"></div>${yearLabel()}<button class="btn primary" type="button" id="cal-share" title="Save the calendar as a picture, or share it straight to WhatsApp from a phone">Share / save as image</button><button class="btn" type="button" onclick="window.DrpCalendar.fitForPrint(); window.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
+        <div style="flex:1"></div>${yearLabel()}<button class="btn primary" type="button" id="cal-share" title="Save the calendar as a picture, or share it straight to WhatsApp from a phone">Share / save as image</button><button class="btn" type="button" onclick="window.DrpCalendar.print()" title="Prints on one A3 page, in the same colours">Print / save as PDF (A3)</button></div>
       ${window.DrpCalendar.render(d, { today: todayDs() })}
       ${isAdmin() ? `<div class="no-print" style="margin-top:18px">
         <details class="sect" id="cal-hol"><summary>This year’s RCC holidays<span class="sect-hint">${d.holidays.filter((h) => h.date >= year().start && h.date <= year().end).length} in ${esc(year().id)}</span></summary><div class="sect-body"></div></details>
@@ -974,7 +974,7 @@
     const s = state.cfg.settings;
     setMain(`${head}
       <div class="toolbar no-print"><div style="flex:1"></div>${monthPicker('mr-month', d.year, d.monthNo)}<button class="btn" type="button" onclick="window.print()">Print / save as PDF</button></div>
-      <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Monthly Report — ${esc(d.program)}</h2><div>${esc(d.label)} · Academic year ${esc(year().id)}</div>
+      <div class="report-head"><div class="dept">${esc(s.department)}</div><h2>Monthly Report — ${esc(d.program)}</h2><div>${esc(d.label)} · Academic year ${esc(state.batch || '')}</div>
         ${d.log ? `<div class="note">${esc(d.log.fileName)}${d.log.sent ? ` · sent${d.log.sentOn ? ' on ' + fmtDate(d.log.sentOn) : ''}` : ' · not yet sent'}</div>` : ''}</div>
       <div class="grid kpis print-block">
         <div class="kpi"><div class="label">Total days</div><div class="value">${d.totals.days}</div></div>
