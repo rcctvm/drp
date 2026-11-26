@@ -15,10 +15,10 @@
       </ul>`],
     ['Dashboard', `<p>Class days and teaching hours for the batch, hours per month and per paper, how many syllabus topics have been taught,
       attendance, recent classes and upcoming holidays. Admins also see which monthly reports have not been marked as sent.</p>`],
-    ['Class log', `<p>One row per day and up to five sessions per day. Each session has a start and end time, a topic (from 2026-27: a unit or a
+    ['Class log', `<p>One row per day and up to seven sessions per day (the seven teaching hours of the Weekly Time Table, with lunch 1–2 pm). Each session has a start and end time, a topic (from 2026-27: a unit or a
       practical experiment) and one or more faculty members or activities. From 2026-27 each session also has a <b>type</b>: Lecture, Tutorial, Practical,
       Exam or Other, so the Syllabus page can compare taught hours with the plan. Hours are calculated from the times. Sundays and RCC holidays are shaded.</p>
-      <p><b>Admins:</b> click an empty cell (+) to add a session, or a filled cell to edit or delete it. Only one session can use each slot on a day.</p>`],
+      <p><b>Admins:</b> the columns used that month are shown; press <b>+ Add session</b> (right of the last column) to show one more, up to 07. From 2026-27 a new session starts with that hour's times. Click an empty cell (+) to add a session, or a filled cell to edit or delete it. Only one session can use each slot on a day.</p>`],
     ['Attendance', `<p>P = present, A = absent, L = leave. Blank means not marked (no class, holiday). The percentage is present ÷ days marked.</p>
       <p><b>Admins:</b> click a cell to cycle P → A → L → blank, then press <b>Save</b>. <b>Mark class days present</b> fills P on every day that has a class logged and no mark yet.</p>`],
     ['Syllabus and curricula', `<p>Each academic year follows a curriculum. Up to 2025-26: the yearly scheme (Papers I–VIII with topics and sub-topics).

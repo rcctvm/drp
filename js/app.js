@@ -542,9 +542,13 @@
     if (!d) return;
     const bySlot = {};
     d.sessions.forEach((s) => { bySlot[s.date + '|' + s.slot] = s; });
-    const slots = state.cfg.slots || 5;
+    const slots = state.cfg.slots || 7;
+    // Columns shown: the sessions used this month (at least 3 for an admin), plus any the admin added
+    // with "+ Add session" (up to the 7 hours of the Weekly Time Table).
     const usedSlots = Math.max(2, ...d.sessions.map((s) => s.slot), isAdmin() ? 3 : 1);
-    const showSlots = state.showAllSlots ? slots : Math.min(slots, usedSlots);
+    const showSlots = Math.min(slots, Math.max(usedSlots, state.logSlots || 0));
+    const addBtn = isAdmin() && showSlots < slots
+      ? `<th class="add-ses no-print"><button class="btn small" type="button" id="log-more" title="Show one more session column (up to ${slots} a day)">+ Add session</button></th>` : '';
     const today = todayDs();
     const cell = (day, k) => {
       const s = bySlot[day.date + '|' + k];
@@ -564,25 +568,33 @@
         <button class="btn" type="button" onclick="window.print()">Print</button>
       </div>
       <div class="table-wrap"><table class="log-grid">
-        <thead><tr><th style="width:90px">Date</th>${Array.from({ length: showSlots }, (_, i) => `<th>Session ${String(i + 1).padStart(2, '0')}</th>`).join('')}</tr></thead>
+        <thead><tr><th style="width:90px">Date</th>${Array.from({ length: showSlots }, (_, i) => `<th>Session ${String(i + 1).padStart(2, '0')}${slotTime(i + 1)}</th>`).join('')}${addBtn}</tr></thead>
         <tbody>${d.days.map((day) => `<tr>
           <td class="date ${day.holiday ? 'hol' : (day.dow === 0 ? 'off' : '')} ${day.date === today ? 'today' : ''}">${fmtShort(day.date)}${day.holiday ? `<div class="note">${esc(day.holiday.name)}</div>` : ''}</td>
-          ${Array.from({ length: showSlots }, (_, i) => cell(day, i + 1)).join('')}</tr>`).join('')}
-          <tr class="total"><td>Total</td><td colspan="${showSlots}">${d.totals.days} days · ${minToHM(d.totals.minutes)} hours · ${d.totals.sessions} sessions</td></tr>
+          ${Array.from({ length: showSlots }, (_, i) => cell(day, i + 1)).join('')}${addBtn ? '<td class="add-ses no-print"></td>' : ''}</tr>`).join('')}
+          <tr class="total"><td>Total</td><td colspan="${showSlots + (addBtn ? 1 : 0)}">${d.totals.days} days · ${minToHM(d.totals.minutes)} hours · ${d.totals.sessions} sessions</td></tr>
         </tbody>
       </table></div>
-      ${isAdmin() && showSlots < slots ? `<p class="note">Showing ${showSlots} of ${slots} sessions per day. <a href="#" id="log-more">Show all ${slots}</a></p>` : ''}`);
+      `);
     wireMonthPicker('log-month', '#/log');
     if (!isAdmin()) return;
     const more = $('#log-more');
-    if (more) more.onclick = (e) => { e.preventDefault(); state.showAllSlots = true; viewLog(year, monthNo); };
+    if (more) more.onclick = (e) => { e.preventDefault(); state.logSlots = showSlots + 1; viewLog(year, monthNo); };
     $$('.log-grid td.ses.editable').forEach((td) => td.addEventListener('click', () => {
       const s = td.dataset.id ? d.sessions.find((x) => x.id === td.dataset.id) : null;
       editSession(s || { date: td.dataset.date, slot: Number(td.dataset.slot) }, () => viewLog(year, monthNo));
     }));
   }
 
+  /** Weekly Time Table hours (semester scheme): " · 09:00–10:00" under the session heading. */
+  function slotTime(k) {
+    const t = isSemester() && (state.cfg.slotTimes || [])[k - 1];
+    return t ? `<div class="slot-time">${fmtTime(t[0])}–${fmtTime(t[1])}</div>` : '';
+  }
   function editSession(s, done) {
+    // A new session in the semester scheme starts with that hour's times from the Weekly Time Table.
+    const tt = !s.id && !s.start && isSemester() && (state.cfg.slotTimes || [])[s.slot - 1];
+    if (tt) s = Object.assign({}, s, { start: tt[0], end: tt[1] });
     const fac = state.cfg.faculty;
     const chosen = new Set((s.faculty || []).map((f) => f.abbr));
     const body = `

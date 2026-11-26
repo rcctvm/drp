@@ -405,3 +405,8 @@ b.ok-num { color: var(--ok); }
 .acal-hols tr.pad td { color: transparent; }
 /* While the calendar is turned into an image: no hover outline / today ring artefacts */
 .acal.acal-snap td.today { outline: none; }
+
+/* Class log: "+ Add session" column and the Weekly Time Table hour under each session heading */
+.log-grid th.add-ses, .log-grid td.add-ses { width: 1%; white-space: nowrap; background: transparent; border-color: transparent; }
+.log-grid th .slot-time { font-weight: 400; font-size: 11px; opacity: .8; }
+@media print { .no-print { display: none !important; } }
