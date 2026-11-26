@@ -410,3 +410,21 @@ b.ok-num { color: var(--ok); }
 /* Class log: "+ Add session" column and the Weekly Time Table hour under each session heading */
 .log-grid th.add-ses, .log-grid td.add-ses { width: 1%; white-space: nowrap; background: transparent; border-color: transparent; }
 @media print { .no-print { display: none !important; } }
+
+/* Working vs Productive: totals in the top-right corner */
+.chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.work-totals { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; color: #ffffff; font-size: 13px; }
+.work-totals i { display: inline-block; width: 11px; height: 11px; margin-right: 5px; vertical-align: -1px; }
+.work-totals b { font-size: 16px; margin-left: 3px; }
+.work-totals .pct { font-size: 20px; font-weight: 700; color: #ffff00; }
+/* Checks and balances */
+details.check { border: 1px solid var(--border, #1f4f5a); border-radius: 8px; margin: 8px 0; background: var(--cell, transparent); }
+details.check > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; list-style: none; }
+details.check > summary::-webkit-details-marker { display: none; }
+details.check .mark { display: inline-block; width: 20px; font-weight: 700; }
+details.check.ok .mark { color: var(--ok, #3ddc84); }
+details.check.warn .mark { color: var(--yellow, #ffff00); }
+details.check .sect-body { padding: 0 12px 10px 32px; }
+ul.check-list { margin: 6px 0; padding-left: 18px; columns: 2 320px; font-size: 13px; }
+ul.check-list li { break-inside: avoid; margin: 2px 0; }
+details.check > summary .sect-hint { font-weight: 400; margin-left: 10px; opacity: .85; }

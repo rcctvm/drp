@@ -508,10 +508,11 @@
           ${facList.length ? '<div class="chart-box"><canvas id="c-fac" aria-label="Teaching hours per faculty member"></canvas></div>' : '<div class="empty">No classes logged yet.</div>'}
         </div>
       </div>
-      <div class="panel chart-sheet"><h2 style="text-align:left">${esc(state.program)}: Working Days vs Productive Days</h2>
+      <div class="panel chart-sheet"><div class="chart-head"><h2 style="text-align:left">${esc(state.program)}: Working Days vs Productive Days</h2>${workTotals(d)}</div>
         <div class="chart-box"><canvas id="c-work" aria-label="Working days (attendance taken) and productive days (classes held) per month"></canvas></div>
         <p class="note" style="color:#c9d7e3;margin:8px 0 0">Working days: days attendance was taken. Productive days: days with at least one class (with times) logged.</p>
-      </div>`);
+      </div>
+      ${seesAll() && d.checks ? checksPanel(d) : ''}`);
     {
       // Like the legacy Home chart: one pair of columns per month of the batch, numbers on top.
       const ms = d.months;
@@ -548,6 +549,37 @@
       options: { indexAxis: 'y', maintainAspectRatio: false, layout: { padding: { right: 36 } }, scales: { x: { beginAtZero: true, grace: '8%' } },
         plugins: { legend: { display: false }, barLabels: { mode: 'top' } } }
     });
+  }
+
+  /** Top-right of the Working vs Productive chart: the year's totals and productive days as % of working days. */
+  function workTotals(d) {
+    const w = d.months.reduce((a, m) => a + (m.workingDays || 0), 0), p = d.months.reduce((a, m) => a + (m.days || 0), 0);
+    const pctTxt = w ? `${Math.round(1000 * p / w) / 10}%` : '—';
+    return `<div class="work-totals"><span><i style="background:#3D85C6"></i>Working days <b>${w}</b></span>
+      <span><i style="background:#EA4335"></i>Productive days <b>${p}</b></span><span class="pct" title="Productive days as a share of working days">${pctTxt}</span></div>`;
+  }
+  /**
+   * Checks and balances: do the totals agree, and which days or classes are missing something?
+   * Each check shows ✓ or ⚠ with a count; open it for the dates, each linked to that month's class log.
+   */
+  function checksPanel(d) {
+    const c = d.checks, hm = (m) => minToHM(m);
+    const dayLink = (x) => { const [y, mo] = x.date.split('-'); return `<a href="#/log/${y}/${Number(mo)}">${fmtDate(x.date)}</a>`; };
+    const itemRow = (x) => `<li>${dayLink(x)}${x.slot ? ` · session ${String(x.slot).padStart(2, '0')}` : ''}${x.what ? ` · ${esc(x.what)}` : ''}${x.minutes ? ` · ${hm(x.minutes)} h` : ''}</li>`;
+    const check = (ok, title, detail, list, hint) => `<details class="check ${ok ? 'ok' : 'warn'}"><summary><span class="mark">${ok ? '✓' : '⚠'}</span> ${title}<span class="sect-hint">${detail}</span></summary>
+      <div class="sect-body">${hint ? `<p class="note">${hint}</p>` : ''}${list && list.items.length ? `<ul class="check-list">${list.items.map(itemRow).join('')}</ul>${list.count > list.items.length ? `<p class="note">… and ${list.count - list.items.length} more.</p>` : ''}` : (ok ? '<p class="note">Nothing to fix.</p>' : '')}</div></details>`;
+    const hrs = c.hours, same = hrs.months === hrs.papersAndActivities;
+    const facMin = (d.faculty || []).reduce((a, f) => a + f.minutes, 0);
+    return `<div class="panel"><h2>Checks and balances</h2>
+      <p class="note" style="margin-top:0">Every class hour should appear in every total, and every working day should have its classes logged. Open a line to see the dates; click a date to fix it in the class log.</p>
+      ${check(same, same ? 'Hours agree' : 'Hours don’t agree', same ? `${hm(hrs.months)} h in "Teaching hours per month" = ${hm(hrs.papersAndActivities)} h in "Hours by paper and activity"` : `${hm(hrs.months)} h per month ≠ ${hm(hrs.papersAndActivities)} h by paper and activity`, c.outsideYear,
+        same ? `Faculty hours (${hm(facMin)} h) are not compared: a class taught by two faculty members counts in full for each, and activities without a faculty member are not in that chart.` : 'The difference is classes dated outside this academic year’s months (listed below). Move them to the right date or year.')}
+      ${check(!c.workingNoClass.count, 'Working days without a class logged', c.workingNoClass.count ? `${c.workingNoClass.count} day(s): attendance taken, no class (with times) in the log` : 'every working day has classes', c.workingNoClass, 'Students were present but no class or activity is logged, so these hours are missing from every total. Log what was done (class, training, project work, exam, library, …).')}
+      ${check(!c.classNoAttendance.count, 'Class days without attendance', c.classNoAttendance.count ? `${c.classNoAttendance.count} day(s): classes logged, attendance not taken` : 'attendance taken on every class day', c.classNoAttendance, 'Classes were held but attendance was not marked.')}
+      ${check(!c.untimed.count, 'Classes without times', c.untimed.count ? `${c.untimed.count} class(es) count 0 hours` : 'every class has a start and end time', c.untimed, 'Without a start and end time a class adds no hours to any total. Add the times.')}
+      ${check(!c.noTopic.count, 'Classes without a topic', c.noTopic.count ? `${c.noTopic.count} class(es)` : 'every class has a topic or activity', c.noTopic, 'Choose the topic, unit or activity, so the hours go to the right paper or activity.')}
+      ${check(!c.noFaculty.count, 'Classes without a faculty member or activity', c.noFaculty.count ? `${c.noFaculty.count} class(es)` : 'every class has a faculty member or activity', c.noFaculty, 'Choose who took the class (or the activity, e.g. Seminar, Library), so the Faculty hours are complete.')}
+    </div>`;
   }
 
   // ---------- Class log ----------
