@@ -460,6 +460,7 @@
     Promise.resolve(view(...args.map(decodeURIComponent))).catch((e) => { console.error('View ' + name + ' failed:', e); });
   }
   window.addEventListener('hashchange', route);
+  window.addEventListener('beforeprint', () => $$('details.exam-sect').forEach((det) => { det.open = true; }));
 
   // ---------- Dashboard ----------
   async function viewDashboard() {
@@ -797,7 +798,10 @@
       </div>
       ${series.map((sr) => {
         const rows = d.exams.filter((e) => e.series === sr);
-        return `<div class="panel print-block"><h2>${esc(sr)}</h2><div class="table-wrap"><table>
+        // Collapsed until opened; an exam opened by the user stays open while they enter marks.
+        const dates = rows.map((e) => e.date).filter(Boolean).sort();
+        const span = dates.length ? (dates[0] === dates[dates.length - 1] ? fmtDate(dates[0]) : `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}`) : 'dates not set';
+        return `<details class="sect exam-sect" data-series="${esc(sr)}" ${state.examOpen && state.examOpen.has(sr) ? 'open' : ''}><summary>${esc(sr)}<span class="sect-hint">${rows.length} paper(s) · ${span}</span></summary><div class="sect-body"><div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Paper</th><th>Title</th><th class="num">Max</th>${d.students.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}${isAdmin() ? '<th></th>' : ''}</tr></thead>
           <tbody>${rows.map((e) => `<tr class="${isAdmin() ? 'clickable' : ''}" data-id="${esc(e.id)}"><td>${fmtDate(e.date)}</td><td>${esc(e.paper)}</td><td class="wrap">${esc(e.title)}</td><td class="num">${e.maxMarks}</td>
             ${d.students.map((s) => scoreCell(e, s.id)).join('')}${isAdmin() ? '<td><button class="btn small" type="button" data-edit>Edit</button></td>' : ''}</tr>`).join('')}
@@ -805,8 +809,12 @@
               const got = rows.filter((e) => e.scores[s.id] && e.scores[s.id].score !== '');
               const sum = got.reduce((a, e) => a + Number(e.scores[s.id].score), 0), max = got.reduce((a, e) => a + e.maxMarks, 0);
               return `<td class="num">${got.length ? `${fmt(sum)} (${Math.round(100 * sum / max)}%)` : '—'}</td>`;
-            }).join('')}${isAdmin() ? '<td></td>' : ''}</tr></tbody></table></div></div>`;
+            }).join('')}${isAdmin() ? '<td></td>' : ''}</tr></tbody></table></div></div></details>`;
       }).join('') || '<div class="empty">No exams scheduled yet.</div>'}`);
+    state.examOpen = state.examOpen || new Set();
+    $$('details.exam-sect').forEach((det) => det.addEventListener('toggle', () => {
+      if (det.open) state.examOpen.add(det.dataset.series); else state.examOpen.delete(det.dataset.series);
+    }));
     if (!isAdmin()) return;
     $('#ex-add').onclick = () => editExam({ series: series[series.length - 1] || 'Internal 1', maxMarks: 100 });
     $$('tr.clickable').forEach((tr) => tr.addEventListener('click', (ev) => {
