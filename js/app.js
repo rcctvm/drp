@@ -497,14 +497,14 @@
           <div class="hint">${seesAll() ? `${att.length} students` : (att[0] ? `${att[0].P} present of ${att[0].total} days marked` : 'No record yet')}</div></div>
       </div>
       <div class="grid two" style="margin-top:16px">
-        <div class="panel"><h2>Teaching hours per month</h2><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
-        <div class="panel"><h2>Hours by paper and activity</h2><div class="chart-box" style="height:${Math.max(300, 26 * paperRows.length + 60)}px"><canvas id="c-papers"></canvas></div></div>
+        <div class="panel"><div class="chart-head"><h2>Teaching hours per month</h2>${totalBadge(`<b>${minToHM(d.totals.minutes)}</b> h · <b>${d.totals.days}</b> class days`, 'Total for the academic year')}</div><div class="chart-box"><canvas id="c-hours"></canvas></div></div>
+        <div class="panel"><div class="chart-head"><h2>Hours by paper and activity</h2>${totalBadge(`<b>${minToHM(paperRows.reduce((a, r) => a + r.minutes, 0))}</b> h`, 'Total of all papers and activities')}</div><div class="chart-box" style="height:${Math.max(300, 26 * paperRows.length + 60)}px"><canvas id="c-papers"></canvas></div></div>
       </div>
       <div class="grid two">
         <div class="panel chart-sheet"><h2>Attendance</h2>
           ${att.length ? '<div class="chart-box"><canvas id="c-att" aria-label="Attendance per student: present and absent days stacked"></canvas></div>' : '<div class="empty">No students yet.</div>'}
         </div>
-        <div class="panel chart-sheet"><h2>Faculty - Hours</h2>
+        <div class="panel chart-sheet"><div class="chart-head"><h2 style="text-align:left">Faculty - Hours</h2>${totalBadge(`<b>${minToHM(facList.reduce((a, f) => a + f.minutes, 0))}</b> h`, 'Total of all faculty members (a class taken by two counts for each)')}</div>
           ${facList.length ? '<div class="chart-box"><canvas id="c-fac" aria-label="Teaching hours per faculty member"></canvas></div>' : '<div class="empty">No classes logged yet.</div>'}
         </div>
       </div>
@@ -551,6 +551,8 @@
     });
   }
 
+  /** Total shown in the top-right corner of a chart. */
+  function totalBadge(html, title) { return `<div class="chart-total" title="${esc(title || '')}">Total ${html}</div>`; }
   /** Top-right of the Working vs Productive chart: the year's totals and productive days as % of working days. */
   function workTotals(d) {
     const w = d.months.reduce((a, m) => a + (m.workingDays || 0), 0), p = d.months.reduce((a, m) => a + (m.days || 0), 0);

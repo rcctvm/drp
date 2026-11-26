@@ -428,3 +428,7 @@ details.check .sect-body { padding: 0 12px 10px 32px; }
 ul.check-list { margin: 6px 0; padding-left: 18px; columns: 2 320px; font-size: 13px; }
 ul.check-list li { break-inside: avoid; margin: 2px 0; }
 details.check > summary .sect-hint { font-weight: 400; margin-left: 10px; opacity: .85; }
+/* Chart totals (top-right corner) */
+.chart-total { font-size: 13px; color: var(--muted, #c9d7e3); white-space: nowrap; padding-top: 4px; }
+.chart-total b { font-size: 17px; color: var(--yellow, #ffff00); }
+.panel.chart-sheet .chart-total { color: #ffffff; }
