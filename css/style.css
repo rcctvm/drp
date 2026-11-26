@@ -432,3 +432,5 @@ details.check > summary .sect-hint { font-weight: 400; margin-left: 10px; opacit
 .chart-total { font-size: 13px; color: var(--muted, #c9d7e3); white-space: nowrap; padding-top: 4px; }
 .chart-total b { font-size: 17px; color: var(--yellow, #ffff00); }
 .panel.chart-sheet .chart-total { color: #ffffff; }
+details.sem-sect > summary { font-size: 18px; }
+details.sem-sect > .sect-body > details.sect { margin-left: 0; }

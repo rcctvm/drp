@@ -817,8 +817,16 @@
         <div class="field" style="min-width:260px"><label for="syl-q">Search units</label><input id="syl-q" type="search" value="${esc(filter || '')}" placeholder="e.g. Monte Carlo, IMRT, Python"></div>
       </div>
       ${sems.map((sem) => { const t = semTotals(sem); const body = d.papers.filter((p) => (p.semester || 0) === sem).map(course).join('');
-        return body ? `<h2 style="margin-top:18px">Semester ${sem === 1 ? 'I' : sem === 2 ? 'II' : sem}<span class="note" style="font-weight:400"> · ${t.credits} credits · ${fmt(h(t.done))} of ${fmt(t.hours)} planned hours taught</span></h2>${body}` : ''; }).join('')
+        // Each semester is collapsed until opened (open while searching; stays open once opened).
+        const open = filter || (state.semOpen && state.semOpen.has(sem));
+        return body ? `<details class="sect sem-sect" data-sem="${sem}" ${open ? 'open' : ''}><summary>Semester ${sem === 1 ? 'I' : sem === 2 ? 'II' : sem}<span class="sect-hint">${t.credits} credits · ${fmt(h(t.done))} of ${fmt(t.hours)} planned hours taught</span></summary><div class="sect-body">${body}</div></details>` : ''; }).join('')
         || '<div class="empty">No courses for this academic year’s curriculum.</div>'}`);
+    state.semOpen = state.semOpen || new Set();
+    $$('details.sem-sect').forEach((det) => det.addEventListener('toggle', () => {
+      if (filter) return;
+      const k = Number(det.dataset.sem);
+      if (det.open) state.semOpen.add(k); else state.semOpen.delete(k);
+    }));
     const inp = $('#syl-q');
     let tm; inp.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { history.replaceState(null, '', '#/syllabus/' + encodeURIComponent(inp.value)); viewSyllabus(inp.value).then(() => { const i = $('#syl-q'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 250); };
   }
