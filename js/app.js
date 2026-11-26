@@ -693,7 +693,6 @@
           <button class="btn primary" type="button" id="att-save" disabled>Save</button>` : ''}
         <button class="btn" type="button" onclick="window.print()">Print</button>
       </div>
-      ${d.students.length ? `<div class="panel chart-sheet"><h2>Attendance — ${MONTHS[d.monthNo - 1]} ${d.year}</h2><div class="chart-box"><canvas id="c-att-month" aria-label="Attendance this month per student"></canvas></div></div>` : ''}
       <div class="table-wrap"><table class="att-grid">
         <colgroup><col class="c-name">${d.days.map(() => '<col>').join('')}<col class="c-n"><col class="c-n"><col class="c-n"><col class="c-pct"><col class="c-pct"></colgroup>
         <thead><tr><th>Student</th>${d.days.map((x) => `<th class="day ${x.holiday ? 'hol' : (x.dow === 0 ? 'off' : '')}" title="${esc(x.holiday ? x.holiday.name : '')}">${parseDs(x.date).getDate()}<br>${DOW[x.dow].slice(0, 2)}</th>`).join('')}
@@ -703,7 +702,8 @@
           <td class="num">${s.month.P}</td><td class="num">${s.month.A}</td><td class="num">${s.month.L}</td><td class="num">${pct(s.month.pct)}</td><td class="num grand">${pct(s.overall.pct)}</td></tr>`).join('') || `<tr><td colspan="${d.days.length + 6}" class="empty">No students.</td></tr>`}
         </tbody>
       </table></div>
-      <p class="note">Shaded columns: Sundays and RCC holidays. Days with a logged class are marked “class day” in the tooltip.</p>`);
+      <p class="note">Shaded columns: Sundays and RCC holidays. Days with a logged class are marked “class day” in the tooltip.</p>
+      ${d.students.length ? `<div class="panel chart-sheet" style="margin-top:16px"><h2>Attendance — ${MONTHS[d.monthNo - 1]} ${d.year}</h2><div class="chart-box"><canvas id="c-att-month" aria-label="Attendance this month per student"></canvas></div></div>` : ''}`);
     wireMonthPicker('att-month', '#/attendance');
     if (d.students.length) attendanceChart($('#c-att-month'), d.students.map((s) => ({ name: s.name, ...s.month })));
     if (!isAdmin()) return;
@@ -1199,7 +1199,8 @@
         <div id="storage-box"><div class="loading">Loading…</div></div>
         <p>DRP Manager keeps a fast copy of the database. Changes made in DRP Manager show at once; changes made directly in the
         database show within 6 hours, or straight away after pressing this button.</p>
-        <button class="btn" type="button" id="reload-data">Reload data from the database</button></div></details>
+        <button class="btn" type="button" id="reload-data">Reload data from the database</button>
+        <button class="btn" type="button" id="trim-data" title="Removes empty rows and columns; records are never touched">Trim empty rows and columns</button></div></details>
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
       ${accountPanel()}`);
@@ -1208,6 +1209,11 @@
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
     wireImport();
+    $('#trim-data').onclick = async () => {
+      if (!(await confirmBox('Trim empty rows and columns', 'Remove the empty columns after each table’s last field and the empty rows after its last record (50 spare rows are kept; more are added automatically when needed)? Records are not touched.', 'Trim'))) return;
+      const r = await write('compactStorage', {});
+      if (r) { toast(`Trimmed: ${fmt(r.before)} → ${fmt(r.after)} cells (${fmt(r.before - r.after)} freed).`); loadStorage(); }
+    };
     const dbSect = $('#storage-box').closest('details');
     dbSect.addEventListener('toggle', () => { if (dbSect.open) loadStorage(); });
     $('#reload-data').onclick = async () => { if ((await write('refreshData', {})) !== undefined) { toast('Data reloaded from the database.'); await refreshConfig(); } };
