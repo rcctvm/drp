@@ -529,6 +529,7 @@
         }
       });
     }
+    { const cp = $('details.checks-panel'); if (cp) cp.addEventListener('toggle', () => { state.checksOpen = cp.open; }); }
     if (att.length) attendanceChart($('#c-att'), att);
     if (facList.length) facultyChart($('#c-fac'), facList);
     const has = d.months.map((m) => m.minutes > 0 || m.days > 0);
@@ -572,8 +573,12 @@
       <div class="sect-body">${hint ? `<p class="note">${hint}</p>` : ''}${list && list.items.length ? `<ul class="check-list">${list.items.map(itemRow).join('')}</ul>${list.count > list.items.length ? `<p class="note">… and ${list.count - list.items.length} more.</p>` : ''}` : (ok ? '<p class="note">Nothing to fix.</p>' : '')}</div></details>`;
     const hrs = c.hours, same = hrs.months === hrs.papersAndActivities;
     const facMin = (d.faculty || []).reduce((a, f) => a + f.minutes, 0);
-    return `<div class="panel"><h2>Checks and balances</h2>
-      <p class="note" style="margin-top:0">Every class hour should appear in every total, and every working day should have its classes logged. Open a line to see the dates; click a date to fix it in the class log.</p>
+    // The whole panel is collapsed; its heading says how many checks need attention.
+    const warnCount = [!same, c.orphanAttendance && c.orphanAttendance.count, c.workingNoClass.count, c.classNoAttendance.count,
+      c.untimed.count, c.noTopic.count, c.noFaculty.count].filter(Boolean).length;
+    const status = warnCount ? `<span class="chk-status warn">⚠ ${warnCount} to look at</span>` : '<span class="chk-status ok">✓ all fine</span>';
+    return `<details class="panel checks-panel" ${state.checksOpen ? 'open' : ''}><summary><span class="more-arrow">▶</span> Checks and balances ${status}</summary>
+      <p class="note" style="margin-top:8px">Every class hour should appear in every total, and every working day should have its classes logged. Open a line to see the dates; click a date to fix it in the class log.</p>
       ${check(same, same ? 'Hours agree' : 'Hours don’t agree', same ? `${hm(hrs.months)} h in "Teaching hours per month" = ${hm(hrs.papersAndActivities)} h in "Hours by paper and activity"` : `${hm(hrs.months)} h per month ≠ ${hm(hrs.papersAndActivities)} h by paper and activity`, c.outsideYear,
         same ? `Faculty hours (${hm(facMin)} h) are not compared: a class taught by two faculty members counts in full for each, and activities without a faculty member are not in that chart.` : 'The difference is classes dated outside this academic year’s months (listed below). Move them to the right date or year.')}
       ${check(!c.workingNoClass.count, 'Working days without a class logged', c.workingNoClass.count ? `${c.workingNoClass.count} day(s): attendance taken, no class (with times) in the log` : 'every working day has classes', c.workingNoClass, 'Students were present but no class or activity is logged, so these hours are missing from every total. Log what was done (class, training, project work, exam, library, …).')}
@@ -582,7 +587,7 @@
       ${check(!c.untimed.count, 'Classes without times', c.untimed.count ? `${c.untimed.count} class(es) count 0 hours` : 'every class has a start and end time', c.untimed, 'Without a start and end time a class adds no hours to any total. Add the times.')}
       ${check(!c.noTopic.count, 'Classes without a topic', c.noTopic.count ? `${c.noTopic.count} class(es)` : 'every class has a topic or activity', c.noTopic, 'Choose the topic, unit or activity, so the hours go to the right paper or activity.')}
       ${check(!c.noFaculty.count, 'Classes without a faculty member or activity', c.noFaculty.count ? `${c.noFaculty.count} class(es)` : 'every class has a faculty member or activity', c.noFaculty, 'Choose who took the class (or the activity, e.g. Seminar, Library), so the Faculty hours are complete.')}
-    </div>`;
+    </details>`;
   }
 
   // ---------- Class log ----------

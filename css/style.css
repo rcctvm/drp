@@ -451,3 +451,10 @@ details.more > summary .note { color: inherit; opacity: .75; font-weight: 400; }
 details.more .more-arrow { display: inline-block; font-size: 11px; transition: transform .15s; }
 details.more[open] .more-arrow { transform: rotate(90deg); }
 details.more[open] > summary { margin-bottom: 8px; }
+/* Dashboard › Checks and balances (collapsible panel) */
+details.checks-panel > summary { cursor: pointer; list-style: none; font-size: 20px; font-weight: 700; color: var(--cyan, #00ffff); display: flex; align-items: center; gap: 8px; }
+details.checks-panel > summary::-webkit-details-marker { display: none; }
+details.checks-panel .more-arrow { display: inline-block; font-size: 13px; transition: transform .15s; }
+details.checks-panel[open] .more-arrow { transform: rotate(90deg); }
+.chk-status { font-size: 14px; font-weight: 600; margin-left: auto; }
+.chk-status.ok { color: var(--ok, #3ddc84); } .chk-status.warn { color: var(--yellow, #ffff00); }
