@@ -550,7 +550,7 @@
     // Activities (seminar, paper presentation, project work, training, exams, ...) follow the papers as their own
     // bars, in a fixed order, each only when it has hours; drawn in grey to set them apart from the papers.
     const ACT_ORDER = ['Seminar', 'Paper presentation', 'Project work', 'Training', 'Exams', 'Class tests', 'Online classes'];
-    const actRank = (k) => (k === 'No topic' ? 100 : ACT_ORDER.indexOf(k) >= 0 ? ACT_ORDER.indexOf(k) : 50);
+    const actRank = (k) => (k === 'No topic' || k === 'Not entered' ? 100 : ACT_ORDER.indexOf(k) >= 0 ? ACT_ORDER.indexOf(k) : 50);
     Object.keys(other).filter((k) => other[k] > 0)
       .sort((a, b) => actRank(a) - actRank(b) || a.localeCompare(b))
       .forEach((k) => paperRows.push({ label: k.toUpperCase(), minutes: other[k], activity: true }));
@@ -692,6 +692,13 @@
     const att = (c.attendance || d.attendance).filter((a) => a.pct != null);
     const avg = att.length ? Math.round(10 * att.reduce((a, x) => a + x.pct, 0) / att.length) / 10 : null;
     const postings = c.areas.filter((a) => a.paper && a.items.length);
+    // Short item names, as in the legacy report: 'QA - Halcyon' → Halcyon, 'Calibration of Dosimeters' → Calibration, 'Miscellaneous Dosimetry (…)' → Miscellaneous.
+    const itemLabel = (it) => {
+      const n = String(it.name || '').trim();
+      if (/^Miscellaneous/i.test(n)) return 'Miscellaneous';
+      if (/^Calibration/i.test(n)) return 'Calibration';
+      return n.replace(/^(QA|Beam Check|Chart Check|Treatment Setup)\s*-?\s*/i, '').replace(/\s*\(.*\)\s*$/, '') || it.code;
+    };
     // Top-right of a chart: every student's own total (adding students' hours together means nothing).
     const perStudentTotals = (val) => `<div class="chart-total st-totals">${sts.map((s, k) => `<span><i class="dot" style="background:${STUDENT_COLORS[k % STUDENT_COLORS.length]}"></i>${esc(s.name.split(' ')[0])} <b>${minToHM(val(s))}</b></span>`).join('')}</div>`;
     const monthName = (k) => { const [y, m] = k.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; };
@@ -746,7 +753,7 @@
       datasets: { bar: { barPercentage: 0.9, categoryPercentage: 0.85 } } };
     chart($('#c-cls-areas'), { type: 'bar', data: { labels: c.areas.map((a) => a.label), datasets: perStudent(c.areas, (s, a) => h(s.hours[a.key])) }, options: opts });
     postings.forEach((a, i) => chart($(`#c-cls-${i}`), { type: 'bar',
-      data: { labels: a.items.map((it) => it.name.replace(/^(QA|Beam Check|Chart Check|Treatment Setup)\s*-?\s*/i, '') || it.code), datasets: perStudent(a.items, (s, it) => h(((s.items || {})[a.key] || {})[it.code])) }, options: hopts }));
+      data: { labels: a.items.map(itemLabel), datasets: perStudent(a.items, (s, it) => h(((s.items || {})[a.key] || {})[it.code])) }, options: hopts }));
     chart($('#c-cls-att'), { type: 'bar', data: { labels: sts.map((s) => s.name), datasets: [
       { label: 'Present', data: sts.map((s) => s.present), backgroundColor: ATT_COLORS.P, maxBarThickness: 40 },
       { label: 'Absent', data: sts.map((s) => s.absent), backgroundColor: ATT_COLORS.A, maxBarThickness: 40 }] },
