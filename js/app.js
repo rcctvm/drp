@@ -62,7 +62,7 @@
       ['tasks', { program: p, kind: 'Assignment' }],
       ['calendar', { program: p }],
       ['monthlyReport', { program: p, year: pm.year, month: pm.monthNo }],
-      ...(isAdmin() ? [['reportLog', { program: p }]] : []),
+      ...(isAdmin() ? [['reportLog', { program: p }], ['masterData', {}], ['users', {}]] : []),
       ...(seesAll() ? [['faculty', { program: p }]] : [['reportCard', { studentId: state.cfg.me.studentId }]])
     ].filter(([a, prm]) => { const h = cache.get(pageKey(a, prm)); return !h || Date.now() - h.at > FRESH_MS; });
     if (!want.length) return;
@@ -449,6 +449,11 @@
     tests: (...a) => viewTasks('ClassTest', ...a), assignments: (...a) => viewTasks('Assignment', ...a),
     calendar: viewCalendar, reports: viewReports, faculty: viewFaculty, settings: viewSettings, help: viewHelp
   };
+  /**
+   * Is this page still the one on screen? A page that finishes loading (or redraws after a save) after
+   * the user has moved to another tab must not draw over it.
+   */
+  function onPage(name) { return document.body.classList.contains('view-' + name); }
   function route() {
     if (!state.role) return;
     const [, name = 'dashboard', ...args] = (location.hash || '#/dashboard').split('/');
@@ -464,6 +469,7 @@
 
   // ---------- Dashboard ----------
   async function viewDashboard() {
+    if (!onPage('dashboard')) return;   // the user has moved to another page meanwhile
     const d = await cachedLoad('dashboard', { program: state.program }, viewDashboard);
     if (!d) return;
     const s = state.cfg.settings, me = state.cfg.me;
@@ -592,6 +598,7 @@
 
   // ---------- Class log ----------
   async function viewLog(year, monthNo) {
+    if (!onPage('log')) return;   // the user has moved to another page meanwhile
     const dm = defaultMonth();
     year = Number(year) || dm.year; monthNo = Number(monthNo) || dm.monthNo;
     const d = await cachedLoad('sessions', { program: state.program, year, month: monthNo }, () => viewLog(year, monthNo));
@@ -684,6 +691,7 @@
 
   // ---------- Attendance ----------
   async function viewAttendance(year, monthNo) {
+    if (!onPage('attendance')) return;   // the user has moved to another page meanwhile
     const dm = defaultMonth();
     year = Number(year) || dm.year; monthNo = Number(monthNo) || dm.monthNo;
     const d = await cachedLoad('attendance', { program: state.program, year, month: monthNo }, () => viewAttendance(year, monthNo));
@@ -742,6 +750,7 @@
 
   // ---------- Syllabus ----------
   async function viewSyllabus(filter) {
+    if (!onPage('syllabus')) return;   // the user has moved to another page meanwhile
     const d = await cachedLoad('syllabus', { program: state.program }, () => viewSyllabus(filter));
     if (!d) return;
     if (d.curriculum && d.curriculum !== 'DRP-YEARLY') return viewSemesterSyllabus(d, filter);
@@ -839,6 +848,7 @@
 
   // ---------- Exams ----------
   async function viewExams() {
+    if (!onPage('exams')) return;   // the user has moved to another page meanwhile
     const d = await cachedLoad('exams', { program: state.program }, viewExams);
     if (!d) return;
     const series = [...new Set(d.exams.map((e) => e.series))];
@@ -919,6 +929,7 @@
 
   // ---------- Class tests & assignments ----------
   async function viewTasks(kind) {
+    if (!onPage(kind === 'Assignment' ? 'assignments' : 'tests')) return;   // the user has moved to another page meanwhile
     const isAsg = kind === 'Assignment';
     const rerender = () => viewTasks(kind);
     const d = await cachedLoad('tasks', { program: state.program, kind }, rerender);
@@ -972,6 +983,7 @@
 
   // ---------- Calendar ----------
   async function viewCalendar() {
+    if (!onPage('calendar')) return;   // the user has moved to another page meanwhile
     const d = await cachedLoad('calendar', { program: state.program }, viewCalendar);
     if (!d) return;
     setMain(`
@@ -1029,6 +1041,7 @@
     return monthlyReport(head, a, b);
   }
   async function monthlyReport(head, year, monthNo) {
+    if (!onPage('reports')) return;   // the user has moved to another page meanwhile
     const dm = defaultMonth();
     // Reports are usually prepared for the previous month.
     if (!year) { const i = batchMonths().findIndex((m) => m.key === dm.key); const pm = batchMonths()[Math.max(0, i - 1)] || dm; year = pm.year; monthNo = pm.monthNo; }
@@ -1065,6 +1078,7 @@
     wireMonthPicker('mr-month', '#/reports/monthly');
   }
   async function reportCard(head, studentId) {
+    if (!onPage('reports')) return;   // the user has moved to another page meanwhile
     const list = students();
     if (!seesAll()) studentId = state.cfg.me.studentId;
     if (!studentId) studentId = list[0] && list[0].id;
@@ -1110,6 +1124,7 @@
     if (sel) sel.onchange = () => { location.hash = '#/reports/card/' + encodeURIComponent(sel.value); };
   }
   async function reportLog(head) {
+    if (!onPage('reports')) return;   // the user has moved to another page meanwhile
     const rows = await cachedLoad('reportLog', { program: state.program }, () => reportLog(head));
     if (!rows) return;
     const cur = defaultMonth().key;
@@ -1130,6 +1145,7 @@
 
   // ---------- Faculty (admin) ----------
   async function viewFaculty(abbr) {
+    if (!onPage('faculty')) return;   // the user has moved to another page meanwhile
     const d = await cachedLoad('faculty', { program: state.program }, () => viewFaculty(abbr));
     if (!d) return;
     const sel = abbr ? d.faculty.find((f) => f.abbr === abbr) : null;
@@ -1180,6 +1196,7 @@
   };
 
   async function viewSettings() {
+    if (!onPage('settings')) return;   // the user has moved to another page meanwhile
     const me = state.cfg.me;
     if (!isAdmin()) {
       setMain(`<h1>Settings</h1>${yearPanel()}<div id="display-box">${displayPanel()}</div>${accountPanel()}`);
@@ -1189,8 +1206,8 @@
     }
     const d = await cachedLoad('masterData', {}, viewSettings);
     if (!d) return;
-    const users = await guarded(() => API.call('users'));
-    if (!users) return;
+    const users = await cachedLoad('users', {}, viewSettings);   // kept like the other pages; refreshed in the background
+    if (!users || !onPage('settings')) return;
     setMain(`<h1>Settings</h1>
       ${yearPanel()}
       <div id="display-box">${displayPanel()}</div>
