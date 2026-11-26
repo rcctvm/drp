@@ -56,7 +56,7 @@
   function render(root, info) {
     root.innerHTML = `<div style="max-width:960px;margin:0 auto;padding:18px 16px 60px">
       <h1>Help &amp; user manual</h1>
-      ${SECTIONS.map(([t, h], i) => `<details class="sect" ${i < 2 ? 'open' : ''}><summary>${t}</summary><div class="sect-body">${h}</div></details>`).join('')}
+      ${SECTIONS.map(([t, h], i) => `<details class="sect"><summary>${t}</summary><div class="sect-body">${h}</div></details>`).join('')}
     </div>`;
     const b = window.DRP_BUILD || {}, bEl = root.querySelector('#about-build');
     if (bEl) bEl.textContent = b.time ? `updated ${new Date(b.time).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} (${b.sha})` : 'development copy';

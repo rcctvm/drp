@@ -39,7 +39,10 @@
     } catch (e) {}
   }
   function clearPages() { cache.clear(); try { localStorage.removeItem(PAGES_KEY); } catch (e) {} }
-  API.onVersionChange(() => clearPages());
+  /** Someone changed data on the server: keep showing the saved pages, but refresh each one in the
+   * background when it is opened (and the common ones right away), instead of a blank "Loading…". */
+  function stalePages() { cache.forEach((v) => { v.at = 0; }); setTimeout(prefetch, 50); }
+  API.onVersionChange(() => stalePages());
   const pageKey = (action, params) => action + '@' + (state.batch || '') + JSON.stringify(params);
 
   /** Loads the pages people open most, in ONE request, right after sign-in. */
@@ -1135,6 +1138,10 @@
         <div id="imp-years"><div class="loading">Loading…</div></div>
         <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
       </div></details>
+      <details class="sect"><summary>Data from the Google Sheet<span class="sect-hint">after editing the sheet by hand</span></summary><div class="sect-body">
+        <p>DRP Manager keeps a fast copy of the DRP Google Sheet. Changes made in DRP Manager show at once; changes typed directly into the
+        Google Sheet show within 6 hours, or straight away after pressing this button.</p>
+        <button class="btn" type="button" id="reload-data">Reload data from the sheet</button></div></details>
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
       ${accountPanel()}`);
@@ -1143,6 +1150,7 @@
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
     wireImport();
+    $('#reload-data').onclick = async () => { if ((await write('refreshData', {})) !== undefined) { toast('Data reloaded from the Google Sheet.'); await refreshConfig(); } };
   }
   /** Settings › Import: one row per academic year, Import / Import all, with step-by-step progress. */
   function wireImport() {
