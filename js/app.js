@@ -1039,13 +1039,12 @@
     setMain(`<h1>Settings</h1>
       ${yearPanel()}
       <div id="display-box">${displayPanel()}</div>
-      <details class="sect"><summary>Import from the legacy sheet<span class="sect-hint">read-only</span></summary><div class="sect-body">
-        <p>Copies the DRP1 2025-26 data from the Google Sheet <b>DRP Manager</b> (DRP1 › 2025-26): students, faculty, syllabus, class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log.
-        The legacy sheet is only read, never changed.</p>
-        <div class="toolbar"><div class="field" style="min-width:360px"><label for="imp-id">Legacy spreadsheet ID</label><input id="imp-id" value="${esc((d.Settings.find((s) => s.Key === 'LegacySpreadsheetId') || {}).Value || '')}"></div>
-          <button class="btn primary" type="button" id="imp-run">Run import</button></div>
+      <details class="sect" id="imp-sect"><summary>Import from the legacy sheets<span class="sect-hint">read-only · every academic year</span></summary><div class="sect-body">
+        <p>Copies each academic year's data from its Google Sheet <b>DRP Manager</b> (Drive › DRP Manager › DRP1 › <i>year</i>): students, faculty, syllabus,
+        class log (OCT … NOV2), attendance, holidays, exams, class tests, assignments and the report-sent log. The legacy sheets are only read, never changed.
+        Re-importing a year never creates duplicates and never touches other years; anything entered or edited in DRP Manager is kept.</p>
+        <div id="imp-years"><div class="loading">Loading…</div></div>
         <pre id="imp-out" class="note" style="white-space:pre-wrap" hidden></pre>
-        <p class="note">Last import: <span id="imp-last">${(() => { const v = (d.Settings.find((s) => s.Key === 'LastLegacyImport') || {}).Value; return v ? esc(new Date(v).toLocaleString('en-GB')) : 'never'; })()}</span>. Re-running never creates duplicates: earlier imported rows are replaced, and anything entered or edited here is kept.</p>
       </div></details>
       <details class="sect"><summary>Users<span class="sect-hint">${users.length} account(s)</span></summary><div class="sect-body" id="users-body"></div></details>
       ${Object.keys(TABLES).map((t) => `<details class="sect" data-table="${t}"><summary>${esc(TABLES[t].title)}<span class="sect-hint">${(d[t] || []).length} row(s)</span></summary><div class="sect-body"></div></details>`).join('')}
@@ -1054,33 +1053,57 @@
     renderTable('Batches', d.Batches || [], $('#years-table'), { onSaved: async () => { await refreshConfig(); initYear(); viewSettings(); } });
     renderUsers(users);
     $$('details[data-table]').forEach((det) => det.addEventListener('toggle', () => { if (det.open && !det.dataset.ready) { det.dataset.ready = 1; renderTable(det.dataset.table, d[det.dataset.table] || [], $('.sect-body', det)); } }));
-    $('#imp-run').onclick = async () => {
-      if (!(await confirmBox('Import from legacy sheet', 'Read the legacy DRP Manager sheet and copy its data into DRP Manager? This can take up to a minute.', 'Import'))) return;
-      const btn = $('#imp-run'), out = $('#imp-out');
-      const steps = [['master', 'Students, faculty, syllabus, holidays, report log'], ['sessions', 'Class log (month tabs)'], ['attendance', 'Attendance'], ['assessments', 'Exams, class tests, assignments']];
-      const line = (k, v) => `  ${k}: ${typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ') : v}`;
+    wireImport();
+  }
+  /** Settings › Import: one row per academic year, Import / Import all, with step-by-step progress. */
+  function wireImport() {
+    const det = $('#imp-sect'), box = $('#imp-years'), out = $('#imp-out');
+    const steps = [['master', 'Students, faculty, syllabus, holidays, report log'], ['sessions', 'Class log (month tabs)'], ['attendance', 'Attendance'], ['assessments', 'Exams, class tests, assignments']];
+    const line = (k, v) => `    ${k}: ${typeof v === 'object' ? Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ') : v}`;
+    let list = [], busy = false;
+    const draw = () => {
+      box.innerHTML = `<div class="table-wrap"><table class="fit"><thead><tr><th style="width:120px">Academic year</th><th>Legacy sheet (spreadsheet ID)</th><th style="width:190px">Last imported</th><th style="width:110px"></th></tr></thead>
+        <tbody>${list.map((y, i) => `<tr><td class="tech">${esc(y.year)}</td>
+          <td><input data-sheet="${i}" value="${esc(y.sheetId)}" aria-label="Legacy sheet ID for ${esc(y.year)}" placeholder="spreadsheet ID"></td>
+          <td>${y.lastImport ? esc(new Date(y.lastImport).toLocaleString('en-GB')) : '<span class="note">never</span>'}</td>
+          <td><button class="btn small" type="button" data-imp="${i}">Import</button></td></tr>`).join('')}</tbody></table></div>
+        <div class="actions"><button class="btn primary" type="button" id="imp-all">Import all years</button></div>`;
+      $$('[data-imp]', box).forEach((b) => b.addEventListener('click', () => run([Number(b.dataset.imp)])));
+      $('#imp-all').onclick = () => run(list.map((_, i) => i).filter((i) => list[i].sheetId || $(`[data-sheet="${i}"]`, box).value.trim()));
+    };
+    const load = async () => { const r = await guarded(() => API.call('legacyYears')); if (r) { list = r; draw(); } };
+    det.addEventListener('toggle', () => { if (det.open && !list.length) load(); });
+    async function run(idx) {
+      if (busy || !idx.length) return;
+      const names = idx.map((i) => list[i].year).join(', ');
+      if (!(await confirmBox('Import from the legacy sheets', `Import ${names}? Each year takes up to a minute.`, 'Import'))) return;
+      busy = true; out.hidden = false;
+      $$('button', box).forEach((b) => { b.disabled = true; });
       const log = [];
-      out.hidden = false;
-      btn.disabled = true;
       try {
-        for (let i = 0; i < steps.length; i++) {
-          const [step, label] = steps[i];
-          btn.textContent = `Importing ${i + 1}/${steps.length}…`;
-          out.textContent = log.concat(`Step ${i + 1}/${steps.length}: ${label}…`).join('\n');
-          let res;
-          try { res = await write('importLegacy', { sourceId: $('#imp-id').value.trim(), step }); }
-          catch (e) { log.push(`Step ${i + 1}/${steps.length}: ${label} — FAILED: ${e.message}`); out.textContent = log.join('\n'); return; }
-          if (!res) return;
-          log.push(`Step ${i + 1}/${steps.length}: ${label} — done`);
-          Object.entries(res).filter(([k]) => k !== 'notes' && k !== 'step').forEach(([k, v]) => log.push(line(k, v)));
-          (res.notes || []).forEach((n) => log.push('  Note: ' + n));
-          out.textContent = log.join('\n');
+        for (const i of idx) {
+          const y = list[i], sheet = $(`[data-sheet="${i}"]`, box).value.trim();
+          log.push(`${y.year}`);
+          for (let k = 0; k < steps.length; k++) {
+            const [step, label] = steps[k];
+            out.textContent = log.concat(`  Step ${k + 1}/${steps.length}: ${label}…`).join('\n');
+            let res;
+            try { res = await write('importLegacy', { year: y.year, sourceId: sheet || undefined, step }); }
+            catch (e) { log.push(`  Step ${k + 1}/${steps.length}: ${label} — FAILED: ${e.message}`); out.textContent = log.join('\n'); return; }
+            if (!res) return;
+            log.push(`  Step ${k + 1}/${steps.length}: ${label} — done`);
+            Object.entries(res).filter(([key]) => !['notes', 'step', 'academicYear', 'source'].includes(key)).forEach(([key, v]) => log.push(line(key, v)));
+            (res.notes || []).forEach((n) => log.push('    Note: ' + n));
+            out.textContent = log.join('\n');
+          }
         }
         toast('Import finished.');
-        $('#imp-last').textContent = new Date().toLocaleString('en-GB');
         await refreshConfig();
-      } finally { btn.disabled = false; btn.textContent = 'Run import'; }
-    };
+        initYear();
+        renderBadge();
+        await load();
+      } finally { busy = false; $$('button', box).forEach((b) => { b.disabled = false; }); }
+    }
   }
   function renderUsers(users) {
     const body = $('#users-body');
@@ -1162,7 +1185,7 @@
   /** Settings › Academic year: which year is shown, and (admins) the list of years. */
   function yearPanel() {
     const y = year();
-    return `<details class="sect" open><summary>Academic year<span class="sect-hint">${esc(y.id || '')}${y.current ? ' · current' : ''}</span></summary><div class="sect-body">
+    return `<details class="sect"><summary>Academic year<span class="sect-hint">${esc(y.id || '')}${y.current ? ' · current' : ''}</span></summary><div class="sect-body">
       <div class="toolbar" style="margin-bottom:6px">${yearPicker('set-year')}
         <p class="note" style="margin:0;align-self:center">${fmtDate(y.start)} – ${fmtDate(y.end)}. Every page shows this academic year. The current year is shown by default each time DRP Manager is opened.</p></div>
       ${isAdmin() ? '<h3 style="margin-top:12px">Academic years</h3><div id="years-table"></div><p class="note">To start a new year: add a row (e.g. 2026-2027 with its first and last month), save, choose it above, then on the Calendar page copy last year’s events and enter that year’s RCC holidays. Add the new students under Students with that academic year.</p>' : ''}
@@ -1188,7 +1211,7 @@
     const P = window.DrpPrefs, f = P.getFont(), w = P.getWidth(), d = P.defaults();
     const name = { default: 'Default (Segoe UI)', courier: 'Courier New', comfortable: 'Comfortable', full: 'Full width' };
     const radio = (group, value, cur, label) => `<label class="choice"><input type="radio" name="${group}" value="${value}" ${value === cur ? 'checked' : ''}> ${label}</label>`;
-    return `<details class="sect" open><summary>Display<span class="sect-hint">font and page width</span></summary><div class="sect-body">
+    return `<details class="sect"><summary>Display<span class="sect-hint">font and page width</span></summary><div class="sect-body">
       <h3>Font</h3>
       <div class="choice-row">${radio('p-font', 'default', f, name.default)}${radio('p-font', 'courier', f, '<span style="font-family:\'Courier New\',Courier,monospace">Courier New</span>')}</div>
       <div class="font-preview ${f}" id="p-preview">Session 01 · 9:00 AM–10:30 AM · (THE01) Beam Therapy · Raghukumar P. · 1:30 h</div>
@@ -1201,7 +1224,7 @@
   /** Re-draws only the Display panel after a change, without jumping to the top. */
   function redrawDisplay() {
     const y = window.scrollY, box = $('#display-box');
-    if (box) { box.innerHTML = displayPanel(); wireDisplay(); }
+    if (box) { box.innerHTML = displayPanel(); const det = $('details', box); if (det) det.open = true; wireDisplay(); }
     window.scrollTo(0, y);
   }
   function wireDisplay() {
