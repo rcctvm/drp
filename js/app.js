@@ -1262,7 +1262,8 @@
     const input = (c, v, i) => {
       let [key, label, , type] = c;
       if (type === 'year') { type = years().map((y) => y.id); if (!v) v = state.batch; }
-      if (type === 'curriculum') { type = Object.keys(state.cfg.curricula || { 'DRP-YEARLY': 1 }); if (!v) v = curriculum(); }
+      // Empty = the yearly scheme (as the server reads it); only a row added now starts with the curriculum being viewed.
+      if (type === 'curriculum') { type = Object.keys(state.cfg.curricula || { 'DRP-YEARLY': 1 }); if (!v) v = rows[i] && rows[i]._new ? curriculum() : 'DRP-YEARLY'; }
       const name = `${i}.${key}`, aria = `aria-label="${esc(label)} row ${i + 1}"`;
       if (Array.isArray(type)) return `<select name="${name}" ${aria}>${type.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}${v && !type.includes(v) ? `<option selected>${esc(v)}</option>` : ''}</select>`;
       if (type === 'bool') return `<input type="checkbox" name="${name}" ${v === '' || v === true || String(v).toUpperCase() === 'TRUE' ? 'checked' : ''} ${aria} style="width:auto">`;
@@ -1275,7 +1276,7 @@
         <div class="table-wrap"><table class="edit"><thead><tr>${spec.cols.map((c) => `<th style="min-width:${c[2]}px">${esc(c[1])}</th>`).join('')}<th></th></tr></thead>
         <tbody>${rows.map((r, i) => `<tr>${spec.cols.map((c) => `<td>${input(c, r[c[0]] ?? '', i)}</td>`).join('')}<td><button class="btn small danger" type="button" data-del="${i}" aria-label="Delete row ${i + 1}">✕</button></td></tr>`).join('')}</tbody></table></div>
         <div class="actions"><button class="btn" type="button" data-add>Add row</button><button class="btn primary" type="button" data-save>Save ${esc(spec.title.toLowerCase())}</button></div>`;
-      $('[data-add]', box).onclick = () => { collect(); rows.push({}); draw(); };
+      $('[data-add]', box).onclick = () => { collect(); rows.push({ _new: true }); draw(); };
       $$('[data-del]', box).forEach((b) => b.addEventListener('click', () => { collect(); rows.splice(Number(b.dataset.del), 1); draw(); }));
       $('[data-save]', box).onclick = async () => {
         collect();
