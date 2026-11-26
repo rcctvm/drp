@@ -274,11 +274,11 @@
             if (Math.abs(base - y) >= 15) {           // fits inside the part
               g.textAlign = 'center'; g.fillStyle = '#ffffff';
               g.fillText(fmtV(v), el.x, (y + base) / 2);
-            } else {                                  // thin part: number beside the column, in the part's colour
+            } else {                                  // thin part: number beside the column, in white (red on navy is hard to read)
               const tx = el.x + (width || 30) / 2 + 5, ty = (y + base) / 2;
               g.textAlign = 'left';
               g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = 'rgba(14,45,74,.95)'; g.strokeText(fmtV(v), tx, ty);
-              g.fillStyle = ds.backgroundColor || '#ffffff'; g.fillText(fmtV(v), tx, ty);
+              g.fillStyle = '#ffffff'; g.fillText(fmtV(v), tx, ty);
             }
             g.textAlign = 'center'; g.fillStyle = '#ffffff';
           });
